@@ -41,9 +41,20 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
+      - name: Debug check secret
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "TOKEN is set (length: ${#CLOUDFLARE_API_TOKEN})"
+          else
+            echo "TOKEN is NOT set"
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
 
       - name: Upload output artifacts
