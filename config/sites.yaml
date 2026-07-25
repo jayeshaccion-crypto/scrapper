@@ -1,38 +1,4 @@
 sites:
-  - name: quotes_static
-    start_urls:
-      - "https://quotes.toscrape.com/"
-    fetcher: basic
-    pagination:
-      next_selector: "li.next a::attr(href)"
-      max_pages: 3
-    selectors:
-      item: ".quote"
-      fields:
-        text: ".text::text"
-        author: ".author::text"
-        tags: ".tag::text"
-        link: "a::attr(href)"
-    rate_limit_seconds: 1.5
-    output_format: json
-
-  - name: books_dynamic
-    start_urls:
-      - "https://books.toscrape.com/"
-    fetcher: dynamic
-    pagination:
-      next_selector: "li.next a::attr(href)"
-      max_pages: 3
-    selectors:
-      item: "article.product_pod"
-      fields:
-        title: "h3 a::attr(title)"
-        price: ".price_color::text"
-        availability: ".availability::text"
-        link: "h3 a::attr(href)"
-    rate_limit_seconds: 2.0
-    output_format: csv
-
   - name: magicbricks
     parser: json_embed
     start_urls:

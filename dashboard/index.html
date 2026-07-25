@@ -163,10 +163,11 @@
     }
 
     function fmtPrice(raw) {
-      if (!raw) return '—';
-      if (raw >= 10000000) return (raw / 10000000).toFixed(2) + ' Cr';
-      if (raw >= 100000) return (raw / 100000).toFixed(1) + ' L';
-      return '₹' + raw.toLocaleString();
+      const n = Number(raw);
+      if (!n) return '—';
+      if (n >= 10000000) return (n / 10000000).toFixed(2) + ' Cr';
+      if (n >= 100000) return (n / 100000).toFixed(1) + ' L';
+      return '₹' + n.toLocaleString();
     }
 
     function render() {
@@ -178,7 +179,7 @@
       // Stats
       const stats = document.getElementById('stats');
       const sites = [...new Set(allProps.map(p => p.site_name))];
-      const avgPrice = filtered.length ? filtered.reduce((s,p) => s + (p.price_raw||0), 0) / filtered.length : 0;
+      const avgPrice = filtered.length ? filtered.reduce((s,p) => s + Number(p.price_raw || 0), 0) / filtered.length : 0;
       const avgArea = filtered.filter(p=>p.super_area).length ? filtered.filter(p=>p.super_area).reduce((s,p) => s + p.super_area, 0) / filtered.filter(p=>p.super_area).length : 0;
       stats.innerHTML = `
         <div class="stat"><div class="label">Total</div><div class="value">${allProps.length}</div></div>
