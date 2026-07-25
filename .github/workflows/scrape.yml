@@ -21,6 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: /github/home/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install runtime tools
         run: |
           apt-get update -qq
@@ -30,6 +39,12 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq gh
           pip install -q -r requirements.txt awscli
+
+      - name: Install Playwright browsers
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: |
+          python -m playwright install chromium
+          python -m patchright install chromium 2>/dev/null || true
 
       - name: Cache adaptive fingerprints
         uses: actions/cache@v4
