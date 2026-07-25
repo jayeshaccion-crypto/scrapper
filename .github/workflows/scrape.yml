@@ -46,8 +46,18 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           echo "env var length: ${#CLOUDFLARE_API_TOKEN}"
-          echo "Inline approach:"
-          CF_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
+          echo "---"
+          echo "Environments API:"
+          gh api repos/jayeshm14/scrapper/environments --jq '.environments[].name' 2>&1 || true
+          echo "---"
+          echo "Actions env secrets:"
+          gh api repos/jayeshm14/scrapper/environments/Actions/secrets --jq '.secrets[].name' 2>&1 || true
+          echo "---"
+          echo "Actions env variables:"
+          gh api repos/jayeshm14/scrapper/environments/Actions/variables --jq '.variables[].name' 2>&1 || true
+          echo "---"
+          echo "Trying deploy..."
+          wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
 
       - name: Upload output artifacts
         uses: actions/upload-artifact@v4
