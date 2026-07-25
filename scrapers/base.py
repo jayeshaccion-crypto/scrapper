@@ -100,19 +100,17 @@ class BaseScraper:
             print(f"[WARN] {self.name}: robots.txt disallows {url}")
             return None
         kwargs = {"headless": True}
-        if self.config.get("parser") in ("json_embed", "jsonld"):
+        if self.fetcher_type in ("dynamic", "stealthy"):
             kwargs["network_idle"] = True
-            kwargs["timeout"] = 90000
             kwargs["load_dom"] = True
+            kwargs["timeout"] = 90000
+        if self.config.get("wait_selector"):
+            kwargs["wait_selector"] = self.config["wait_selector"]
         if self.fetcher_type == "stealthy":
             kwargs["solve_cloudflare"] = True
-            kwargs["network_idle"] = kwargs.get("network_idle", True)
-            kwargs["load_dom"] = kwargs.get("load_dom", True)
             return StealthyFetcher.fetch(url, **kwargs)
         elif self.fetcher_type == "dynamic":
             kwargs["solve_cloudflare"] = False
-            kwargs["network_idle"] = kwargs.get("network_idle", True)
-            kwargs["load_dom"] = kwargs.get("load_dom", True)
             return StealthyFetcher.fetch(url, **kwargs)
         else:
             return Fetcher.get(url)
@@ -153,11 +151,15 @@ class BaseScraper:
     def _follow_path(self, data, path: str):
         parts = path.split(".")
         for p in parts:
+            if isinstance(data, list):
+                if not data:
+                    return None
+                if p.lstrip('-').isdigit():
+                    data = data[int(p)]
+                else:
+                    data = data[0]
             if isinstance(data, dict) and p in data:
                 data = data[p]
-            elif isinstance(data, list) and p.lstrip('-').isdigit():
-                idx = int(p)
-                data = data[idx]
             else:
                 return None
         return data

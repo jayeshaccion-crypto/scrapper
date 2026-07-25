@@ -25,7 +25,16 @@ for row in rows:
     merged.pop("raw_data", None)
     merged.pop("amenities", None)
     # Extract first available image
-    img = raw.get("photo_url") or raw.get("medium_photo_url") or raw.get("image") or ""
+    img = ""
+    for field in ("photo_url", "medium_photo_url", "image"):
+        val = raw.get(field)
+        if isinstance(val, str):
+            img = val
+            break
+        if isinstance(val, dict):
+            img = val.get("url") or val.get("@id") or ""
+            if img:
+                break
     if not img and raw.get("property_images"):
         imgs = raw["property_images"]
         if isinstance(imgs, list) and imgs:

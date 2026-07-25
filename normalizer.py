@@ -29,6 +29,17 @@ def _parse_bhk(v):
     return int(m.group(1)) if m else None
 
 
+def _parse_bhk_float(v):
+    """Handle values like '3.5', '6+', '2.5' by flooring to integer."""
+    m = re.search(r'([\d.]+)', str(v))
+    if m:
+        try:
+            return int(float(m.group(1)))
+        except ValueError:
+            return _parse_bhk(v)
+    return _parse_bhk(v)
+
+
 SITE_FIELD_MAP = {
     "99acres": {
         "source_site": ("site_name", None),
@@ -38,9 +49,9 @@ SITE_FIELD_MAP = {
         "price_inr": ("price_raw", lambda v: float(v) if v and str(v).replace(".", "").isdigit() else None),
         "price_per_sqft_inr": ("price_per_sqft", lambda v: float(v) if v else None),
         "area_sqft": ("carpet_sqft", lambda v: float(v) if v else None),
-        "bhk": ("bedrooms", lambda v: int(v) if v and str(v).isdigit() else None),
+        "bhk": ("bedrooms", _parse_bhk_float),
         "property_type": ("property_type", None),
-        "furnishing": ("furnish", lambda v: {2: "semi", 1: "full", 3: "unfurnished"}.get(v) if isinstance(v, int) else None),
+        "furnishing": ("furnish", lambda v: {2: "semi", 1: "full", 3: "unfurnished", 4: "unfurnished"}.get(int(v)) if v and str(v).strip().isdigit() else None),
         "floor": ("floor", None),
         "total_floors": ("total_floors", lambda v: int(v) if v and str(v).isdigit() else None),
         "age_years": ("age", lambda v: int(v) if v and str(v).isdigit() else None),
@@ -59,7 +70,7 @@ SITE_FIELD_MAP = {
         "price_inr": ("price_raw", lambda v: float(v) if v else None),
         "price_per_sqft_inr": ("price_per_sqft", lambda v: float(v) if v else None),
         "area_sqft": ("carpet_area", lambda v: float(v) if v else None),
-        "bhk": ("bedroom", lambda v: int(v) if v and str(v).isdigit() else None),
+        "bhk": ("bedroom", _parse_bhk_float),
         "property_type": (None, None),
         "furnishing": ("furnished", lambda v: v.lower() if v else None),
         "floor": ("floor", None),
@@ -79,15 +90,15 @@ SITE_FIELD_MAP = {
         "title": ("title", None),
         "price_inr": ("price", lambda v: float(v) if v else None),
         "price_per_sqft_inr": (None, None),
-        "area_sqft": (None, None),
-        "bhk": ("bedrooms", lambda v: int(v) if v else None),
+        "area_sqft": ("floor_size", _parse_area_sqft),
+        "bhk": ("bedrooms", _parse_bhk_float),
         "property_type": (None, lambda _: "apartment"),
         "furnishing": (None, None),
         "floor": (None, None),
         "total_floors": (None, None),
         "age_years": (None, None),
         "locality": ("locality", None),
-        "city": ("city", None),
+        "city": ("city", lambda v: v if v else "Noida"),
         "seller_type": (None, None),
         "latitude": ("geo.latitude", lambda v: float(v) if v else None),
         "longitude": ("geo.longitude", lambda v: float(v) if v else None),

@@ -7,9 +7,6 @@ sites:
     embed:
       var: "SERVER_PRELOADED_STATE_"
       data_path: "searchResult"
-      filter:
-        field: "projectSocietyLink"
-        contains: "jaypee-kosmos"
     selectors:
       fields:
         prop_id: "encId"
@@ -55,9 +52,6 @@ sites:
     embed:
       var: "__initialData__"
       data_path: "srp.pageData.properties"
-      filter:
-        field: "PROP_NAME"
-        contains: "Kosmos"
     selectors:
       fields:
         prop_id: "SPID"
@@ -127,6 +121,7 @@ sites:
         floor_size: "floorSize"
         floor_level: "floorlevel"
         locality: "address.addressLocality"
+        sub_locality: "address.streetAddress"
         city: "address.addressRegion"
         latitude: "geo.latitude"
         longitude: "geo.longitude"
@@ -139,18 +134,19 @@ sites:
     start_urls:
       - "https://www.olx.in/noida_g4059326/real-estate_c3"
     fetcher: dynamic
+    wait_selector: "[data-aut-id='itemBox3']"
     pagination:
-      max_pages: 1
+      max_pages: 2
     selectors:
       item: "[data-aut-id='itemBox3']"
       fields:
         title: "[data-aut-id='itemTitle']::text"
         price: "[data-aut-id='itemPrice']::text"
         location: "[data-aut-id='item-location']::text, [data-aut-id='itemLocationEliteSeller']::text"
-        date: "[data-aut-id='itemDate']::text"
+        date: "span[class*='date']::text, [data-aut-id='itemDate']::text"
         url: "a:first-of-type::attr(href)"
         image: "figure img::attr(src)"
-        details: "[data-aut-id='itemDetails']::text"
+        details: "span[class*='detail']::text, [data-aut-id='itemDetails']::text"
         category: "[data-aut-category-id]::attr(data-aut-category-id)"
     rate_limit_seconds: 3.0
     output_format: json
@@ -160,6 +156,7 @@ sites:
     start_urls:
       - "https://www.proptiger.com/noida-real-estate"
     fetcher: dynamic
+    wait_selector: ".popular-project-card"
     pagination:
       max_pages: 1
     selectors:
