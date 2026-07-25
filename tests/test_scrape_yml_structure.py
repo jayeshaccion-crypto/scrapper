@@ -23,26 +23,34 @@ def test_concurrency_lock():
     assert c["cancel-in-progress"] is False
 
 
-def test_docker_container():
+def test_no_container_block():
     data = load()
-    container = data["jobs"]["scrape"]["container"]
-    assert "ghcr.io/d4vinci/scrapling" in container["image"]
+    assert "container" not in data["jobs"]["scrape"], "Should not use Docker container"
 
 
-def test_no_playwright_install():
-    raw = YML_PATH.read_text(encoding="utf-8")
-    assert "playwright install" not in raw
+def test_playwright_install_cached():
+    data = load()
+    steps = data["jobs"]["scrape"]["steps"]
+    # There should be a playwright install step with a cache guard
+    install = [s for s in steps if "Install Playwright" in s.get("name", "")]
+    assert len(install) == 1
+    assert install[0].get("if") is not None
 
 
-def test_cache_step():
+def test_cache_steps():
     data = load()
     steps = data["jobs"]["scrape"]["steps"]
     cache = [s for s in steps if "Cache" in s.get("name", "")]
-    assert len(cache) == 1
-    c = cache[0]
-    assert c["with"]["path"] == "./.scrapling_cache"
-    assert "runner.os" in c["with"]["key"]
-    assert "github.sha" in c["with"]["key"]
+    assert len(cache) == 3, f"Expected 3 cache steps (pip, playwright, scrapling), got {len(cache)}"
+    names = [s["name"] for s in cache]
+    assert "Cache pip packages" in names
+    assert "Cache Playwright browsers" in names
+    assert "Cache adaptive fingerprints" in names
+    # Verify adaptive fingerprint cache path
+    fp = [s for s in cache if "adaptive" in s["name"].lower()][0]
+    assert fp["with"]["path"] == "./.scrapling_cache"
+    assert "runner.os" in fp["with"]["key"]
+    assert "github.sha" in fp["with"]["key"]
 
 
 def test_r2_step_after_consolidate():

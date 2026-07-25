@@ -142,10 +142,11 @@ Built with vanilla HTML/CSS/JS. Features:
 **Schedule:** Every hour (`0 * * * *`)
 **Concurrency:** `group: scrape-db` — ensures only one scrape runs at a time, eliminating race conditions on the SQLite DB.
 
-### Job 1 — `scrape` (runs inside `ghcr.io/d4vinci/scrapling:latest`):
+### Job 1 — `scrape`:
 
-1. Checkout repo + install runtime tools (`gh`, `awscli`, Python deps) inside the Scrapling Docker container
-2. `actions/cache` restores adaptive fingerprints from `./.scrapling_cache`
+1. Checkout repo + setup Python 3.12
+2. Cache pip packages, Playwright browsers, and adaptive fingerprints
+3. `pip install -r requirements.txt` + `playwright install chromium`
 3. `gh run download` previous artifacts: `scraper-db` (SQLite DB), `scraper-state` (yield history + fallback state)
 4. `python main.py --all` — scrape all sites
 5. `python check_anomalies.py` — compare per-site yield against 7-day rolling median; writes to `$GITHUB_STEP_SUMMARY`
