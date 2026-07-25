@@ -142,10 +142,14 @@ sites:
     parser: css
     start_urls:
       - "https://www.olx.in/noida_g4059326/real-estate_c3"
+      - "https://www.olx.in/noida_g4059326/real-estate_c3?page=2"
+      - "https://www.olx.in/noida_g4059326/real-estate_c3?page=3"
+      - "https://www.olx.in/noida_g4059326/real-estate_c3?page=4"
+      - "https://www.olx.in/noida_g4059326/real-estate_c3?page=5"
     fetcher: dynamic
     wait_selector: "[data-aut-id='itemBox3']"
     pagination:
-      max_pages: 2
+      max_pages: 5
     selectors:
       item: "[data-aut-id='itemBox3']"
       fields:
@@ -183,6 +187,36 @@ sites:
         url: "a.popular-project-card__body::attr(href)"
         image: "img.lazy-load-img::attr(src)"
         status: ".popular-project-card__status span:last-child::text"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
+
+  - name: proptiger-flats
+    parser: json_embed
+    start_urls:
+      - "https://www.proptiger.com/flats-in-noida"
+    fetcher: dynamic
+    embed:
+      var: "__NEXT_DATA__"
+      data_path: "props.pageProps.listings"
+    selectors:
+      fields:
+        title: "title"
+        price: "price"
+        price_raw: "price"
+        location: "locality"
+        bhk: "bedroom"
+        area: "builtUpArea"
+        url: "url"
+        image: "image"
+        builder: "builderName"
+        furnishing: "furnishing"
+        bathrooms: "bathroom"
+        floor: "floorNo"
+        total_floors: "totalFloor"
+        possession: "possessionStatus"
     rate_limit_seconds: 3.0
     output_format: json
     location_filter:
