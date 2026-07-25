@@ -44,17 +44,16 @@ jobs:
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "env var length: ${#CLOUDFLARE_API_TOKEN}"
           echo "---"
-          echo "Environments API:"
-          gh api repos/jayeshm14/scrapper/environments --jq '.environments[].name' 2>&1 || true
+          echo "All envs: $(gh api repos/jayeshm14/scrapper/environments --jq '.environments[].name' 2>&1)"
           echo "---"
-          echo "Actions env secrets:"
-          gh api repos/jayeshm14/scrapper/environments/Actions/secrets --jq '.secrets[].name' 2>&1 || true
+          echo "Secrets in Actions env: $(gh api repos/jayeshm14/scrapper/environments/Actions/secrets --jq '.secrets[].name' 2>&1)"
           echo "---"
-          echo "Actions env variables:"
-          gh api repos/jayeshm14/scrapper/environments/Actions/variables --jq '.variables[].name' 2>&1 || true
+          echo "Variables in Actions env: $(gh api repos/jayeshm14/scrapper/environments/Actions/variables --jq '.variables[].name' 2>&1)"
+          echo "---"
+          echo "Secrets at repo level: $(gh api repos/jayeshm14/scrapper/actions/secrets --jq '.secrets[].name' 2>&1)"
           echo "---"
           echo "Trying deploy..."
           wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
