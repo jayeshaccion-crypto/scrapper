@@ -45,6 +45,9 @@ sites:
     location_filter:
       field: locality
       contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
   - name: 99acres
     parser: json_embed
@@ -101,6 +104,9 @@ sites:
     location_filter:
       field: locality
       contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
   - name: squareyards
     parser: jsonld
@@ -137,6 +143,9 @@ sites:
     location_filter:
       field: locality
       contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
   - name: olx
     parser: css
@@ -166,6 +175,10 @@ sites:
     location_filter:
       field: location
       contains: "Noida"
+    adaptive_cache: ".scrapling_cache"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
   - name: proptiger
     parser: css
@@ -192,6 +205,10 @@ sites:
     location_filter:
       field: location
       contains: "Noida"
+    adaptive_cache: ".scrapling_cache"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
   - name: proptiger-flats
     parser: json_embed
@@ -222,59 +239,91 @@ sites:
     location_filter:
       field: location
       contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
 
-  # Site: nobroker.in
-  # Status: BLOCKED — XHR-only React SPA. The public API endpoint
-  #   (POST /api/v3/multi/property/BUY/filter?city=noida&pageNo=1) requires a
-  #   polygon geo-location token. The page's JavaScript (window.nb.appState) is
-  #   destroyed by React after initial load. No polygon data found in localStorage
-  #   (NoBrokerCache is empty in fresh browser). The API call passes
-  #   isCanonical=undefined in URL params. Cannot extract data without (a)
-  #   reverse-engineering the polygon lookup, (b) a real browser profile with
-  #   cached geolocation data, or (c) an alternative API that doesn't require
-  #   the polygon token.
-  # - name: nobroker
-  #   parser: json_embed
-  #   start_urls:
-  #     - "https://www.nobroker.in/property/sale/noida/"
-  #   fetcher: stealthy
-  #   embed:
-  #     var: "nb.appState"
-  #     data_path: "listPageProperties"
-  #   selectors:
-  #     fields:
-  #       prop_id: "id"
-  #       title: "title"
-  #       price: "price"
-  #       location: "locality"
-  #       bhk: "bhk"
-  #       area: "builtUpArea"
-  #       url: "shareUrl"
-  #       image: "primaryImage"
-  #       furnished: "furnishing"
-  #       bathrooms: "bathrooms"
-  #       floor: "floor"
-  #       total_floors: "totalFloors"
-  #       property_type: "propertyType"
-  #       description: "description"
-  #   rate_limit_seconds: 3.0
-  #   output_format: json
-  #
-  # Site: housing.com
-  # Status: PARTIALLY WORKING — Custom WAF (Akamai Bot Manager) blocks
-  #   Noida-specific HTML paths (406 Security Alert) but:
-  #   a) Homepage (/) loads fine (200, 1.6MB SSR with __INITIAL_STATE__)
-  #   b) GraphQL API endpoint discovered: mightyzeus-mum.housing.com/api/gql
-  #      (Apollo Server, introspection disabled)
-  #   c) Query fields discovered: searchHash(hash: String!): SearchHashResponse
-  #      SearchHashResponse has: hash, city { name id url }, statusCode,
-  #      featureType, sellers, searchEntityDetails
-  #   d) City format: {city_slug}_{service} → searchHash returns hash lookup
-  #   e) searchHash is NOT the main search — it's a hash utility. The actual
-  #      property search query is in the JS bundles (Apollo Client in bootstrap).
-  #   f) JS bundles: 66 scripts on CDN, Apollo Client in 9 bundles. The hash is
-  #      built via encodeURIComponent(JSON.stringify(modifyEntityData(L))).
-  #   g) Makaan.com redirects to housing.com/ (same infrastructure)
-  #   Next steps: Extract the actual search/hashGen GraphQL query from
-  #   bootstrap.02503f1b.m.d.js or the SRP bundle, then call it with proper
-  #   entity data parameters.
+  - name: nobroker
+    parser: json_embed
+    start_urls:
+      - "https://www.nobroker.in/property/sale/noida/"
+    fetcher: stealthy
+    embed:
+      var: "nb.appState"
+      data_path: "listPageProperties"
+    selectors:
+      fields:
+        prop_id: "id"
+        title: "title"
+        price: "price"
+        location: "locality"
+        bhk: "bhk"
+        area: "builtUpArea"
+        url: "shareUrl"
+        image: "primaryImage"
+        furnished: "furnishing"
+        bathrooms: "bathrooms"
+        floor: "floor"
+        total_floors: "totalFloors"
+        property_type: "propertyType"
+        description: "description"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
+
+  - name: housing
+    parser: json_embed
+    start_urls:
+      - "https://www.housing.com/in/property-for-sale-noida"
+    fetcher: stealthy
+    embed:
+      var: "__INITIAL_STATE__"
+      data_path: "searchResults"
+    selectors:
+      fields:
+        title: "title"
+        price: "price"
+        location: "locality"
+        bhk: "bedroom"
+        area: "builtUpArea"
+        url: "url"
+        image: "image"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
+
+  - name: makaan
+    parser: json_embed
+    start_urls:
+      - "https://www.makaan.com/noida-residential-property-in-noida-buy"
+    fetcher: stealthy
+    embed:
+      var: "__INITIAL_STATE__"
+      data_path: "searchResults"
+    selectors:
+      fields:
+        title: "title"
+        price: "price"
+        location: "locality"
+        bhk: "bedroom"
+        area: "builtUpArea"
+        url: "url"
+        image: "image"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false

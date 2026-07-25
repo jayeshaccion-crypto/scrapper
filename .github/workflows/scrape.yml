@@ -5,44 +5,77 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: scrape-db
+  cancel-in-progress: false
+
 env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/d4vinci/scrapling:0.4.11
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install Python dependencies
+      - name: Install runtime tools
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          apt-get update -qq
+          apt-get install -y -qq curl
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          apt-get update -qq
+          apt-get install -y -qq gh
+          # Install project deps (skip scrapling — provided by Docker image)
+          pip install -q pyyaml tenacity python-dotenv awscli
+
+      - name: Cache adaptive fingerprints
+        uses: actions/cache@v4
+        with:
+          path: ./.scrapling_cache
+          key: scrapling-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            scrapling-cache-
 
       - name: Create required directories
-        run: mkdir -p logs output data/consolidated
+        run: mkdir -p logs output data/consolidated .scrapling_cache
 
       - name: Download previous DB artifact (safe to fail on first run)
         run: gh run download --name scraper-db --dir data/consolidated/ --repo ${{ github.repository }} || true
 
-      - name: Install Playwright browsers
-        run: python -m playwright install --with-deps chromium
+      - name: Download previous fallback/history state
+        run: gh run download --name scraper-state --dir data/ --repo ${{ github.repository }} 2>/dev/null || true
 
       - name: Run scraper
         run: python main.py --all
         env:
           PYTHONUNBUFFERED: 1
 
-      - name: Consolidate to SQLite (appends new data, upserts existing)
+      - name: Run anomaly detection
+        run: python check_anomalies.py --summary $GITHUB_STEP_SUMMARY
+
+      - name: Consolidate to SQLite
         run: python consolidate.py --sites 99acres magicbricks squareyards olx proptiger proptiger-flats
+
+      - name: Sync DB to Cloudflare R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          BACKUP="noida_properties-$(date -u +%Y%m%d_%H%M%S).db.gz"
+          gzip -c data/consolidated/noida_properties.db > "/tmp/$BACKUP"
+          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/db-backups/$BACKUP" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto
+          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/noida_properties-latest.db.gz" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto
+          echo "R2_BACKUP=$BACKUP" >> $GITHUB_ENV
 
       - name: Build dashboard data from DB
         run: python dashboard/build-data.py
@@ -52,6 +85,17 @@ jobs:
         with:
           name: scraper-db
           path: data/consolidated/noida_properties.db
+          retention-days: 90
+          overwrite: true
+
+      - name: Upload fallback/history state for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-state
+          path: |
+            data/yield_history.json
+            data/fallback_state.json
+            data/fallback_anomaly.json
           retention-days: 90
           overwrite: true
 
