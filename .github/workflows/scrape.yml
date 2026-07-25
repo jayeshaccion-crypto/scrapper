@@ -37,7 +37,7 @@ jobs:
           PYTHONUNBUFFERED: 1
 
       - name: Consolidate to SQLite
-        run: python consolidate.py
+        run: python consolidate.py --sites 99acres magicbricks squareyards olx proptiger
 
       - name: Build dashboard data from DB
         run: python dashboard/build-data.py
