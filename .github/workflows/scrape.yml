@@ -36,8 +36,14 @@ jobs:
         env:
           PYTHONUNBUFFERED: 1
 
+      - name: Consolidate to SQLite
+        run: python consolidate.py
+
       - name: Build dashboard data
         run: node dashboard/build-data.js
+
+      - name: Copy DB to dashboard for deploy
+        run: cp data/consolidated/noida_properties.db dashboard/noida_properties.db
 
       - name: Install Wrangler
         run: npm install -g wrangler
@@ -49,5 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scraper-output-${{ github.run_number }}
-          path: output/
+          path: |
+            output/
+            data/
           retention-days: 7

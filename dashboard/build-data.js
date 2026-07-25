@@ -2,26 +2,38 @@ const fs = require('fs');
 const path = require('path');
 
 const outputDir = path.join(__dirname, '..', 'output');
+const dataFile = path.join(__dirname, 'data.json');
 const sites = ['99acres', 'magicbricks', 'squareyards', 'olx', 'proptiger'];
-const allProps = [];
 
+// Load existing data
+let existing = [];
+if (fs.existsSync(dataFile)) {
+  try { existing = JSON.parse(fs.readFileSync(dataFile, 'utf8')); } catch {}
+}
+
+// Build key set for dedup (site + url, site + prop_id)
+const seen = new Set();
+for (const p of existing) {
+  const k = p.site_name + '|' + (p.prop_id || p.listing_url || p.url || '');
+  if (k) seen.add(k);
+}
+
+const newProps = [];
 for (const site of sites) {
   const siteDir = path.join(outputDir, site);
   if (!fs.existsSync(siteDir)) continue;
-  
   const files = fs.readdirSync(siteDir).filter(f => f.endsWith('.json') && f !== '.seen.json');
   for (const file of files) {
     try {
       let content = fs.readFileSync(path.join(siteDir, file), 'utf8');
-      // Remove BOM if present
-      if (content.charCodeAt(0) === 0xFEFF) {
-        content = content.slice(1);
-      }
+      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
       const data = JSON.parse(content);
-      if (Array.isArray(data)) {
-        allProps.push(...data);
-      } else {
-        allProps.push(data);
+      const arr = Array.isArray(data) ? data : [data];
+      for (const item of arr) {
+        const k = item.site_name + '|' + (item.prop_id || item.listing_url || item.url || '');
+        if (k && seen.has(k)) continue;
+        if (k) seen.add(k);
+        newProps.push(item);
       }
     } catch (e) {
       console.error(`Error reading ${file}:`, e.message);
@@ -29,6 +41,6 @@ for (const site of sites) {
   }
 }
 
-const outputPath = path.join(__dirname, 'data.json');
-fs.writeFileSync(outputPath, JSON.stringify(allProps, null, 2));
-console.log(`Wrote ${allProps.length} properties to data.json`);
+const merged = [...existing, ...newProps];
+fs.writeFileSync(dataFile, JSON.stringify(merged, null, 2));
+console.log(`Existing: ${existing.length}, New: ${newProps.length}, Total: ${merged.length} properties`);
