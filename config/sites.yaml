@@ -2,7 +2,7 @@ sites:
   - name: magicbricks
     parser: json_embed
     start_urls:
-      - "https://www.magicbricks.com/flats-in-sector-134-noida-for-sale-pppfs"
+      - "https://www.magicbricks.com/flats-in-noida-for-sale-pppfs"
     fetcher: dynamic
     embed:
       var: "SERVER_PRELOADED_STATE_"
@@ -44,12 +44,12 @@ sites:
     output_format: json
     location_filter:
       field: locality
-      contains: ["Noida", "Sector 134"]
+      contains: "Noida"
 
   - name: 99acres
     parser: json_embed
     start_urls:
-      - "https://www.99acres.com/property-in-sector-134-noida-ffid"
+      - "https://www.99acres.com/property-in-noida-ffid"
     fetcher: dynamic
     respect_robots: false
     embed:
