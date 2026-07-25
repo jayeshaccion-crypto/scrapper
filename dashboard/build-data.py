@@ -6,6 +6,15 @@ from pathlib import Path
 DB = Path(__file__).resolve().parent.parent / "data" / "consolidated" / "noida_properties.db"
 OUT = Path(__file__).resolve().parent / "data.json"
 
+SITE_BASE = {
+    "99acres": "https://www.99acres.com",
+    "magicbricks": "https://www.magicbricks.com",
+    "squareyards": "https://www.squareyards.com",
+    "olx": "https://www.olx.in",
+    "proptiger": "https://www.proptiger.com",
+    "proptiger-flats": "https://www.proptiger.com",
+}
+
 if not DB.exists():
     print(f"DB not found at {DB}, writing empty data.json")
     OUT.write_text("[]", encoding="utf-8")
@@ -20,10 +29,21 @@ props = []
 for row in rows:
     r = dict(row)
     raw = json.loads(r.get("raw_data") or "{}") if r.get("raw_data") else {}
-    # Merge normalized fields with raw data (raw takes precedence for display)
     merged = {**r, **raw}
     merged.pop("raw_data", None)
     merged.pop("amenities", None)
+    site = merged.get("site_name") or r.get("source_site") or ""
+    base = SITE_BASE.get(site, "")
+
+    # Resolve listing URL
+    url = r.get("url") or raw.get("listing_url") or raw.get("url") or ""
+    if url and not url.startswith("http"):
+        if url.startswith("/"):
+            url = base + url
+        elif base:
+            url = base + "/" + url
+    merged["listing_url"] = url
+
     # Extract first available image
     img = ""
     for field in ("photo_url", "medium_photo_url", "image"):

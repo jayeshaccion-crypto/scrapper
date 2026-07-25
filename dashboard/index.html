@@ -85,7 +85,8 @@
       'magicbricks': 'https://www.magicbricks.com',
       'squareyards': 'https://www.squareyards.com',
       'olx': 'https://www.olx.in',
-      'proptiger': 'https://www.proptiger.com'
+      'proptiger': 'https://www.proptiger.com',
+      'proptiger-flats': 'https://www.proptiger.com'
     };
 
     let allProps = [];
@@ -169,7 +170,7 @@
       empty.style.display = 'none';
 
       grid.innerHTML = filtered.map(p => {
-        const url = p.listing_url ? (SITE_URLS[p.site_name] || '#') + p.listing_url : '#';
+        const url = p.listing_url || '#';
         const area = getArea(p);
         const meta = [
           p.bedrooms ? p.bedrooms + ' BHK' : '',
