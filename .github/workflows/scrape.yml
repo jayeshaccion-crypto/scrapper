@@ -44,7 +44,10 @@ jobs:
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
+        run: |
+          echo "env var length: ${#CLOUDFLARE_API_TOKEN}"
+          echo "Inline approach:"
+          CF_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
 
       - name: Upload output artifacts
         uses: actions/upload-artifact@v4
