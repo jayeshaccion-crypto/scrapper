@@ -15,36 +15,22 @@ env:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/d4vinci/scrapling:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Cache Playwright browsers
-        id: cache-playwright
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-
-      - name: Install dependencies
+      - name: Install runtime tools
         run: |
-          pip install -r requirements.txt
-          pip install awscli
-
-      - name: Install Playwright browser
-        if: steps.cache-playwright.outputs.cache-hit != 'true'
-        run: python -m playwright install chromium
+          apt-get update -qq
+          apt-get install -y -qq curl
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          apt-get update -qq
+          apt-get install -y -qq gh
+          # Install project deps (skip scrapling — provided by Docker image)
+          pip install -q pyyaml tenacity python-dotenv awscli
 
       - name: Cache adaptive fingerprints
         uses: actions/cache@v4
