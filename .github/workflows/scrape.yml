@@ -15,6 +15,7 @@ env:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    environment: deploy
     container:
       image: ghcr.io/d4vinci/scrapling:latest
       options: --user root
