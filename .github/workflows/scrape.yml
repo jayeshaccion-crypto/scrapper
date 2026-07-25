@@ -87,4 +87,4 @@ jobs:
         run: npm install -g wrangler
 
       - name: Deploy to production
-        run: CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --branch main --commit-dirty=true
+        run: CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --branch ${{ github.ref_name }} --commit-dirty=true
