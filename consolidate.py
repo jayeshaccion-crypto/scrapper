@@ -6,12 +6,13 @@ from storage import Storage
 from dedup import store_duplicates
 
 
-def read_latest_json(site_dir: Path) -> list[dict]:
+def read_all_json(site_dir: Path) -> list[dict]:
     json_files = sorted(f for f in site_dir.glob("*.json") if not f.name.startswith("."))
-    if not json_files:
-        return []
-    with open(json_files[-1], encoding="utf-8-sig") as f:
-        return json.load(f)
+    all_records = []
+    for f in json_files:
+        with open(f, encoding="utf-8-sig") as fh:
+            all_records.extend(json.load(fh))
+    return all_records
 
 
 def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "output", run_dedup: bool = True):
@@ -23,7 +24,7 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
         name = site_dir.name
         if site_names and name not in site_names:
             continue
-        records = read_latest_json(site_dir)
+        records = read_all_json(site_dir)
         if not records:
             print(f"[SKIP] {name}: no data found")
             continue

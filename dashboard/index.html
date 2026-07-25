@@ -41,6 +41,7 @@
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; padding: 24px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: border-color 0.15s; }
     .card:hover { border-color: var(--accent); }
+    .card-img { width: 100%; height: 180px; object-fit: cover; border-radius: 6px; margin-bottom: 10px; background: var(--border); }
     .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .card-price { font-size: 20px; font-weight: 700; color: var(--green); }
     .card-site { font-size: 11px; background: var(--border); padding: 2px 8px; border-radius: 4px; color: var(--muted); }
@@ -65,10 +66,7 @@
       <h1>Noida Property Dashboard</h1>
       <p>Aggregated from 99acres, MagicBricks, SquareYards, OLX, Proptiger</p>
     </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <a href="noida_properties.db" style="color:var(--muted);font-size:12px;text-decoration:none" download>⬇ DB</a>
-      <button class="theme-toggle" id="theme-toggle">☀️ Light</button>
-    </div>
+    <button class="theme-toggle" id="theme-toggle">☀️ Light</button>
   </div>
   <div class="stats" id="stats"></div>
   <div class="filters" id="filters">
@@ -181,6 +179,7 @@
         ].filter(Boolean);
         return `
           <div class="card">
+            ${p.image_url ? `<img class="card-img" src="${p.image_url}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
             <div class="card-top">
               <div class="card-price">${fmtPrice(p.price_raw)}</div>
               <div class="card-site">${p.site_name}</div>

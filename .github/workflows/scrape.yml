@@ -39,11 +39,8 @@ jobs:
       - name: Consolidate to SQLite
         run: python consolidate.py
 
-      - name: Build dashboard data
-        run: node dashboard/build-data.js
-
-      - name: Copy DB to dashboard for deploy
-        run: cp data/consolidated/noida_properties.db dashboard/noida_properties.db
+      - name: Build dashboard data from DB
+        run: python dashboard/build-data.py
 
       - name: Install Wrangler
         run: npm install -g wrangler
