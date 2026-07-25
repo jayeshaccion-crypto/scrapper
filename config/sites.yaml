@@ -42,6 +42,9 @@ sites:
         image_count: "imageCount"
     rate_limit_seconds: 3.0
     output_format: json
+    location_filter:
+      field: locality
+      contains: ["Noida", "Sector 134"]
 
   - name: 99acres
     parser: json_embed
@@ -95,6 +98,9 @@ sites:
         transaction_type: "TRANSACT_TYPE"
     rate_limit_seconds: 3.0
     output_format: json
+    location_filter:
+      field: locality
+      contains: "Noida"
 
   - name: squareyards
     parser: jsonld
@@ -128,6 +134,9 @@ sites:
         image: "image"
     rate_limit_seconds: 3.0
     output_format: json
+    location_filter:
+      field: locality
+      contains: "Noida"
 
   - name: olx
     parser: css
@@ -150,6 +159,9 @@ sites:
         category: "[data-aut-category-id]::attr(data-aut-category-id)"
     rate_limit_seconds: 3.0
     output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
 
   - name: proptiger
     parser: css
@@ -173,6 +185,9 @@ sites:
         status: ".popular-project-card__status span:last-child::text"
     rate_limit_seconds: 3.0
     output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
 
   # Site: nobroker.in
   # Status: BLOCKED — XHR-only React SPA. The public API endpoint

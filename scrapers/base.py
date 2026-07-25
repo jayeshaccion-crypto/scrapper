@@ -356,7 +356,28 @@ class BaseScraper:
                 if next_url:
                     urls_to_visit.append(next_url)
 
+        all_records = self._apply_filters(all_records)
         return all_records[:self.max_items] if self.max_items else all_records
+
+    def _apply_filters(self, records: list[dict]) -> list[dict]:
+        filt = self.config.get("location_filter", {})
+        if not filt:
+            return records
+        field = filt.get("field", "location")
+        terms = filt.get("contains", [])
+        if isinstance(terms, str):
+            terms = [terms]
+        if not terms:
+            return records
+        filtered = []
+        for r in records:
+            val = str(r.get(field) or "")
+            if any(t.lower() in val.lower() for t in terms):
+                filtered.append(r)
+        skipped = len(records) - len(filtered)
+        if skipped:
+            print(f"[FILTER] {self.name}: skipped {skipped} items outside location filter ({field} not in {terms})")
+        return filtered
 
     def write_output(self, records: list[dict]):
         if not records:
