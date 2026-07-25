@@ -5,6 +5,9 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -27,12 +30,8 @@ jobs:
       - name: Create required directories
         run: mkdir -p logs output data/consolidated
 
-      - name: Download previous DB artifact (first run safe to fail)
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: scraper-db
-          path: data/consolidated/
+      - name: Download previous DB artifact (safe to fail on first run)
+        run: gh run download --name scraper-db --dir data/consolidated/ --repo ${{ github.repository }} || true
 
       - name: Install Playwright browsers
         run: python -m playwright install --with-deps chromium
@@ -87,8 +86,5 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
-      - name: Deploy to master branch preview
-        run: CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --branch master --commit-dirty=true
-
-      - name: Deploy to production (root domain)
+      - name: Deploy to production
         run: CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --branch main --commit-dirty=true
