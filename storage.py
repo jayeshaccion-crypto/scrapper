@@ -66,8 +66,8 @@ class Storage:
         self.conn.executescript(SCHEMA_SQL)
         self.conn.commit()
 
-    def upsert_listing(self, record: dict) -> int | None:
-        norm = normalize(record)
+    def upsert_listing(self, record: dict, normalized: dict | None = None) -> int | None:
+        norm = normalized if normalized is not None else normalize(record)
         listing_id = norm.get("listing_id")
         if not listing_id:
             listing_id = record.get("listing_url") or record.get("url")
@@ -113,10 +113,11 @@ class Storage:
             (source_site, listing_id),
         ).fetchone()[0]
 
-    def upsert_many(self, records: list[dict]) -> list[int]:
+    def upsert_many(self, records: list[dict], normalized: list[dict] | None = None) -> list[int]:
         ids = []
-        for r in records:
-            lid = self.upsert_listing(r)
+        for i, r in enumerate(records):
+            norm = normalized[i] if normalized else None
+            lid = self.upsert_listing(r, normalized=norm)
             if lid:
                 ids.append(lid)
         return ids

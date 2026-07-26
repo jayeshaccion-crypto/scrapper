@@ -102,8 +102,9 @@ def _parse_bhk_float(v):
         try:
             return int(float(m.group(1)))
         except ValueError:
-            return _parse_bhk(v)
-    return _parse_bhk(v)
+            pass
+    m = re.search(r'(\d+)', str(v))
+    return int(m.group(1)) if m else None
 
 
 SITE_FIELD_MAP = {

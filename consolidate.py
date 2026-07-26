@@ -52,7 +52,8 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
             print(f"[SKIP] {name}: no data found")
             continue
 
-        valid = []
+        valid_raw = []
+        valid_norm = []
         for raw in records:
             norm = normalize(raw)
 
@@ -71,13 +72,14 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
                 total_rejected += 1
                 continue
 
-            valid.append(raw)
+            valid_raw.append(raw)
+            valid_norm.append(norm)
 
-        if not valid:
+        if not valid_raw:
             print(f"[SKIP] {name}: all {len(records)} records rejected")
             continue
 
-        ids = storage.upsert_many(valid)
+        ids = storage.upsert_many(valid_raw, normalized=valid_norm)
         all_ids.extend(ids)
         rejected_in_site = len(records) - len(valid)
         print(f"[OK] {name}: {len(valid)}/{len(records)} records consolidated ({len(ids)} upserted, {rejected_in_site} rejected)")

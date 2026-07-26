@@ -3,18 +3,11 @@ from urllib.parse import urlparse
 
 import yaml
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-
-_CONFIG_PATH = None
+from pydantic import BaseModel, field_validator, model_validator
 
 
 def _load_site_domains() -> dict[str, str]:
-    global _CONFIG_PATH
-    if _CONFIG_PATH is None:
-        _CONFIG_PATH = __file__
-    # Walk up to find config/sites.yaml relative to this file
-    base = Path(_CONFIG_PATH).resolve().parent.parent
+    base = Path(__file__).resolve().parent.parent
     cfg = base / "config" / "sites.yaml"
     if not cfg.exists():
         return {}
@@ -86,7 +79,7 @@ class PropertyListing(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def url_must_be_valid(cls, v: str | None, info) -> str | None:
+    def url_must_be_valid(cls, v: str | None) -> str | None:
         if v is None:
             return v
         parsed = urlparse(v)
