@@ -83,11 +83,12 @@ class PropertySpider(Spider):
             )
             manager.add("default", session, default=True)
         elif ft == "dynamic":
+            network_idle = self._config.get("network_idle", True)
             session = AsyncDynamicSession(
                 headless=True,
-                network_idle=True,
+                network_idle=network_idle,
                 load_dom=True,
-                timeout=90000,
+                timeout=120000,
                 proxy=proxy,
                 adaptive=True,
             )

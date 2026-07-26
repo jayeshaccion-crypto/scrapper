@@ -184,7 +184,7 @@ sites:
     parser: css
     start_urls:
       - "https://www.proptiger.com/noida-real-estate"
-    fetcher: dynamic
+    fetcher: stealthy
     wait_selector: ".popular-project-card"
     pagination:
       max_pages: 1

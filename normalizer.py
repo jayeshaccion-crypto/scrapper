@@ -95,6 +95,32 @@ def _parse_bhk(v):
     return int(m.group(1)) if m else None
 
 
+_PRICE_UNITS = {"cr": 10_000_000, "crore": 10_000_000, "lac": 100_000, "lakh": 100_000, "k": 1_000}
+
+
+def _extract_price_from_text(text: str) -> float | None:
+    """Extract price from natural-language text like 'Priced at 45 lakh' or 'Rs. 1.36 Cr'."""
+    if not text:
+        return None
+    m = re.search(
+        r'(?:Rs\.?\s*|price[d]?\s*(?:at\s+)?|is\s+)?(\d+\.?\d*)\s*'
+        r'(cr|crore|lac|lakh|k)\b',
+        text, re.I,
+    )
+    if m:
+        val = float(m.group(1))
+        unit = m.group(2).lower()
+        multiplier = _PRICE_UNITS.get(unit)
+        if multiplier:
+            return round(val * multiplier)
+    # Standalone L/lakh abbreviation — require a space before L to avoid
+    # false positives like "Sector 12L"
+    m = re.search(r'(\d+\.?\d*)\s+[Ll]\b', text)
+    if m:
+        return round(float(m.group(1)) * 100_000)
+    return None
+
+
 def _parse_bhk_float(v):
     """Handle values like '3.5', '6+', '2.5' by flooring to integer."""
     m = re.search(r'([\d.]+)', str(v))
@@ -258,6 +284,13 @@ def normalize(record: dict) -> dict:
                 value = None
         normalized[out_key] = value
     normalized["scraped_at_utc"] = record.get("scraped_at") or record.get("scraped_at_utc")
+
+    # Squareyards: JSON-LD often omits price; fall back to description text
+    if site == "squareyards" and normalized.get("price_inr") is None:
+        desc = record.get("description") or ""
+        inferred = _extract_price_from_text(desc)
+        if inferred is not None:
+            normalized["price_inr"] = inferred
 
     # Noida locality allowlist check
     locality = normalized.get("locality")
