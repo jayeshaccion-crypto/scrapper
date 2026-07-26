@@ -173,16 +173,6 @@ gzip -d /tmp/noida_properties-latest.db.gz
 cp /tmp/noida_properties-latest.db data/consolidated/noida_properties.db
 ```
 
-### Required Secrets
-
-| Secret | Purpose |
-|--------|---------|
-| `CLOUDFLARE_API_TOKEN` | Wrangler Pages deploy |
-| `CLOUDFLARE_ACCOUNT_ID` | R2 endpoint URL construction (`https://<account-id>.r2.cloudflarestorage.com`) |
-| `CLOUDFLARE_R2_ACCESS_KEY_ID` | R2 S3 API credential |
-| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 S3 API credential |
-| `R2_BUCKET_NAME` | R2 bucket name for DB backups |
-
 ---
 
 ## Deployment & Secrets
@@ -298,18 +288,18 @@ Records that fail either gate are **not upserted**. They are streamed to `output
 
 ### XSS Defense
 
-The dashboard (`dashboard/index.html`) renders property data using `innerHTML`. To prevent stored XSS attacks via poisoned listing fields, `dashboard/build-data.py` applies `html.escape()` to all free-text fields (`title`, `description`, `locality`, `seller_type`, etc.) before serializing to `data.json`.
+The dashboard (`dashboard/index.html`) renders property data using `innerHTML`. To prevent stored XSS attacks via poisoned listing fields, `dashboard/build-data.py` applies `html.escape()` to 23 free-text fields (`title`, `description`, `locality`, `seller_type`, `listing_url`, `site_name`, etc.) before serializing to `data.json`.
 
 ### PII Redaction
 
-`normalizer.py` implements regex-based PII redaction on the `description` field before it reaches the database:
+`normalizer.py` implements regex-based PII redaction across 13 known free-text fields (`title`, `description`, `seoDesc`, `contact_name`, `builder`, `full_address`, `sub_locality`, `building_name`, `society_name`, `locality`, `location`, `seller_type`, `user_type`) before they reach the database:
 
 | PII Type | Pattern | Replacement |
 |----------|---------|-------------|
-| Indian mobile phone | `(?:\+91[\-\s]?)?[6-9]\d{9}` | `[REDACTED]` |
+| Indian mobile phone | `(?:\+91[\-\s]?\|0)?[6-9]\d{9}` | `[REDACTED]` |
 | Email address | `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}` | `[REDACTED]` |
 
-The redaction runs inside `normalize()` on every raw record, so PII is stripped before Pydantic validation and SQLite upsert. The redacted field value is stored in both the normalized record and the `raw_data` JSON blob.
+The phone regex handles all common Indian formats: `9876543210`, `+919876543210`, `+91-9876543210`, and `09876543210` (domestic `0`-prefix). The redaction runs inside `normalize()` on every raw record, so PII is stripped before Pydantic validation and SQLite upsert. The redacted values appear in both the normalized output and the `raw_data` JSON blob.
 
 ### LLM Prompt-Injection Warning
 

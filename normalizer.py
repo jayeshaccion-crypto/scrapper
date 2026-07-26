@@ -6,11 +6,21 @@ from pathlib import Path
 # ------------------------------------------------------------------ #
 #  PII Redaction Patterns                                            #
 # ------------------------------------------------------------------ #
-# Indian mobile phone: optional +91 prefix, then 10 digits starting
-# with 6-9 (valid as per DoT numbering plan)
-_PII_PHONE_RE = re.compile(r"(?:\+91[\-\s]?)?[6-9]\d{9}")
+# Indian mobile phone: +91 prefix (optional - or space) or domestic 0
+# prefix, then 10 digits starting with 6-9 (DoT numbering plan).
+# Catches: 9876543210, +919876543210, +91-9876543210, 09876543210.
+_PII_PHONE_RE = re.compile(r"(?:\+91[\-\s]?|0)?[6-9]\d{9}")
 # RFC 5322 simplified email pattern
 _PII_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+# Free-text fields in raw records that may contain PII and should be
+# redacted before DB upsert.
+_PII_TEXT_FIELDS: frozenset[str] = frozenset([
+    "title", "description", "seoDesc", "contact_name", "builder",
+    "full_address", "sub_locality", "building_name", "society_name",
+    "locality", "location", "seller_type", "user_type",
+])
 
 
 def _redact_pii(text: str | None) -> str | None:
@@ -285,14 +295,22 @@ SCHEMA_VERSION = "1.0"
 
 
 def normalize(record: dict) -> dict:
+    """Normalize a raw scraped record into the unified schema.
+
+    NOTE: This function mutates *record* in-place by redacting PII from
+    known text fields (*record* is the caller's raw dict, which later gets
+    stored as ``raw_data`` in the DB). The redacted values therefore appear
+    in both the normalized output and the raw_data JSON blob.
+    """
     site = record.get("site_name", "")
     field_map = SITE_FIELD_MAP.get(site, SITE_FIELD_MAP.get("99acres"))
     normalized = {"schema_version": SCHEMA_VERSION}
 
-    # PII redaction on raw description before any field mapping
-    desc = record.get("description")
-    if isinstance(desc, str):
-        record["description"] = _redact_pii(desc)
+    # PII redaction on known free-text fields before any field mapping
+    for k in _PII_TEXT_FIELDS:
+        val = record.get(k)
+        if isinstance(val, str):
+            record[k] = _redact_pii(val)
     for out_key, (src_key, transform) in field_map.items():
         if src_key is None and transform is None:
             normalized[out_key] = None

@@ -4,6 +4,17 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# Free-text fields that must be HTML-escaped before dashboard rendering
+# to prevent stored XSS via poisoned listing content.
+_XSS_TEXT_FIELDS = {
+    "title", "description", "locality", "seller_type", "builder",
+    "contact_name", "full_address", "sub_locality", "building_name",
+    "society_name", "furnishing", "property_type", "floor", "status",
+    "possession", "ownership", "overlooking", "transaction_type",
+    "flooring", "parking", "facing", "project", "developer",
+    "listing_url", "site_name",
+}
+
 DB = Path(__file__).resolve().parent.parent / "data" / "consolidated" / "noida_properties.db"
 OUT = Path(__file__).resolve().parent / "data.json"
 
@@ -75,13 +86,6 @@ for row in rows:
     merged["image_url"] = img
 
     # XSS sanitization: escape HTML-unsafe characters in free-text fields
-    _XSS_TEXT_FIELDS = frozenset({
-        "title", "description", "locality", "seller_type", "builder",
-        "contact_name", "full_address", "sub_locality", "building_name",
-        "society_name", "furnishing", "property_type", "floor", "status",
-        "possession", "ownership", "overlooking", "transaction_type",
-        "flooring", "parking", "facing", "project", "developer",
-    })
     for k in _XSS_TEXT_FIELDS:
         val = merged.get(k)
         if isinstance(val, str):
