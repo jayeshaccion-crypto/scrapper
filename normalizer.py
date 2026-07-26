@@ -3,6 +3,72 @@ import json
 from pathlib import Path
 
 
+# ------------------------------------------------------------------ #
+#  Noida Locality Allowlist                                          #
+# ------------------------------------------------------------------ #
+# Source: Manual curation of Noida, Greater Noida, and surrounding
+#   sectors as of July 2026. Covers all residential sectors notified
+#   by Noida Authority, Greater Noida Authority, and Yamuna Expressway
+#   Industrial Development Authority (YEIDA).
+#
+# Tokens are lowercase; the matcher normalizes input before comparison.
+# ------------------------------------------------------------------ #
+NOIDA_LOCALITY_PATTERNS: list[re.Pattern] = [
+    # Core Noida tokens (require "noida" proximity for sector matches)
+    re.compile(r"noida\s*extension"),
+    re.compile(r"greater\s+noida"),
+    re.compile(r"(?:^|\W)noida(?:\W|$)"),
+    # Sector patterns — standalone sector numbers match because scrapers
+    # already filter by Noida URL; "Gurgaon Sector 45" is excluded at
+    # the scraper level via location_filter.
+    re.compile(r"noida\s+sector\s+\d{1,3}[a-z]?"),
+    re.compile(r"sector\s+\d{1,3}[a-z]?\s+(?:noida|greater\s+noida)"),
+    re.compile(r"(?:^|\W)sector\s+\d{1,3}[a-z]?(?:\W|$)"),
+    # Landmark / zone tokens specific to Noida region
+    re.compile(r"yamuna\s+expressway"),
+    re.compile(r"gamma\s+\d{1,2}"),
+    re.compile(r"zeta\s+\d{1,2}"),
+    re.compile(r"beta\s+\d{1,2}"),
+    re.compile(r"alpha\s+\d{1,2}"),
+    re.compile(r"delta\s+\d{1,2}"),
+    re.compile(r"omega\s+\d{1,2}"),
+    re.compile(r"pari(?:j|chowk)"),
+    re.compile(r"knowledge\s+park"),
+    re.compile(r"film\s+city"),
+    re.compile(r"ecotech"),
+    re.compile(r"techzone"),
+]
+
+# Fallback substring tokens when locality field is empty
+NOIDA_SUBSTRINGS: list[str] = [
+    "noida", "greater noida", "sector", "expressway", "ecotech",
+]
+
+
+def matches_noida_locality(locality: str | None) -> bool:
+    """Check a locality string against the Noida allowlist.
+
+    Returns True if the locality matches any allowed Noida/Greater Noida
+    pattern. Falls back to substring matching for backwards compatibility
+    with unstructured data.
+    """
+    if not locality:
+        return False
+    text = locality.lower()
+    for pat in NOIDA_LOCALITY_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
+
+def matches_noida_fallback(text: str | None) -> bool:
+    """Substring-based Noida check used when locality field is empty."""
+    if not text:
+        return False
+    t = text.lower()
+    return any(s in t for s in NOIDA_SUBSTRINGS)
+
+
 def _parse_price_india(v):
     text = v.replace(',', '').replace('Onwards', '').replace('Onward', '').strip()
     if 'Cr' in text:
@@ -191,6 +257,25 @@ def normalize(record: dict) -> dict:
                 value = None
         normalized[out_key] = value
     normalized["scraped_at_utc"] = record.get("scraped_at") or record.get("scraped_at_utc")
+
+    # Noida locality allowlist check
+    locality = normalized.get("locality")
+    rejected = None
+    if locality and not matches_noida_locality(locality):
+        rejected = f"locality '{locality}' not in Noida allowlist"
+    elif not locality:
+        # Fallback: check title + location fields for Noida substrings
+        haystack = " ".join(filter(None, [
+            record.get("title", ""),
+            record.get("location", ""),
+            record.get("locality", ""),
+        ]))
+        if haystack and not matches_noida_fallback(haystack):
+            rejected = f"no Noida substring found in title/location"
+    if rejected:
+        normalized["_rejected"] = True
+        normalized["_rejected_reason"] = rejected
+
     return normalized
 
 

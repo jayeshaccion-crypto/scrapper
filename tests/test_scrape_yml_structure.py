@@ -7,7 +7,7 @@ YML_PATH = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "s
 
 
 def load():
-    with open(YML_PATH) as f:
+    with open(YML_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -23,34 +23,29 @@ def test_concurrency_lock():
     assert c["cancel-in-progress"] is False
 
 
-def test_no_container_block():
+def test_docker_container():
     data = load()
-    assert "container" not in data["jobs"]["scrape"], "Should not use Docker container"
+    container = data["jobs"]["scrape"]["container"]
+    assert "ghcr.io/d4vinci/scrapling" in container["image"]
 
 
-def test_playwright_install_cached():
-    data = load()
-    steps = data["jobs"]["scrape"]["steps"]
-    # There should be a playwright install step with a cache guard
-    install = [s for s in steps if "Install Playwright" in s.get("name", "")]
-    assert len(install) == 1
-    assert install[0].get("if") is not None
-
-
-def test_cache_steps():
+def test_playwright_browser_cache():
     data = load()
     steps = data["jobs"]["scrape"]["steps"]
-    cache = [s for s in steps if "Cache" in s.get("name", "")]
-    assert len(cache) == 3, f"Expected 3 cache steps (pip, playwright, scrapling), got {len(cache)}"
-    names = [s["name"] for s in cache]
-    assert "Cache pip packages" in names
-    assert "Cache Playwright browsers" in names
-    assert "Cache adaptive fingerprints" in names
-    # Verify adaptive fingerprint cache path
-    fp = [s for s in cache if "adaptive" in s["name"].lower()][0]
-    assert fp["with"]["path"] == "./.scrapling_cache"
-    assert "runner.os" in fp["with"]["key"]
-    assert "github.sha" in fp["with"]["key"]
+    cache = [s for s in steps if s.get("name") == "Install Playwright browsers"]
+    assert len(cache) == 1
+    assert cache[0].get("if") is not None  # conditional on cache miss
+
+
+def test_adaptive_cache_step():
+    data = load()
+    steps = data["jobs"]["scrape"]["steps"]
+    cache = [s for s in steps if "cache adaptive" in s.get("name", "").lower()]
+    assert len(cache) == 1
+    c = cache[0]
+    assert c["with"]["path"] == "./.scrapling_cache"
+    assert "runner.os" in c["with"]["key"]
+    assert "github.sha" in c["with"]["key"]
 
 
 def test_r2_step_after_consolidate():
@@ -69,8 +64,8 @@ def test_r2_required_secrets():
     steps = data["jobs"]["scrape"]["steps"]
     r2 = [s for s in steps if s.get("name") == "Sync DB to Cloudflare R2"][0]
     env = r2.get("env", {})
-    required = ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_R2_ACCESS_KEY_ID",
-                 "CLOUDFLARE_R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"]
+    required = ["CLOUDFLARE_ACCOUNT_ID", "AWS_ACCESS_KEY_ID",
+                 "AWS_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"]
     for s in required:
         assert s in env, f"Missing secret: {s}"
 

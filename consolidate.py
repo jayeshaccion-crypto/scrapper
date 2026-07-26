@@ -1,9 +1,17 @@
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
+from normalizer import normalize
+from models.property import PropertyListing
 from storage import Storage
 from dedup import store_duplicates
+
+from pydantic import ValidationError
+
+
+REJECTED_DIR = Path("output/rejected")
 
 
 def read_all_json(site_dir: Path) -> list[dict]:
@@ -15,9 +23,24 @@ def read_all_json(site_dir: Path) -> list[dict]:
     return all_records
 
 
+def write_rejection(raw: dict, norm: dict, error: str):
+    REJECTED_DIR.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    log_path = REJECTED_DIR / f"{date_str}.jsonl"
+    entry = {
+        "rejected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "reason": error,
+        "normalized": {k: v for k, v in norm.items() if not k.startswith("_")},
+        "raw": raw,
+    }
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, default=str) + "\n")
+
+
 def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "output", run_dedup: bool = True):
     storage = Storage()
     all_ids = []
+    total_rejected = 0
 
     site_dirs = [d for d in Path(output_dir).iterdir() if d.is_dir()]
     for site_dir in site_dirs:
@@ -28,9 +51,36 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
         if not records:
             print(f"[SKIP] {name}: no data found")
             continue
-        ids = storage.upsert_many(records)
+
+        valid = []
+        for raw in records:
+            norm = normalize(raw)
+
+            # Locality allowlist rejection
+            if norm.get("_rejected"):
+                write_rejection(raw, norm, norm["_rejected_reason"])
+                total_rejected += 1
+                continue
+
+            # Pydantic schema validation
+            try:
+                PropertyListing(**{k: v for k, v in norm.items() if not k.startswith("_")})
+            except ValidationError as e:
+                msg = "; ".join(f"{err['loc']}: {err['msg']}" for err in e.errors())
+                write_rejection(raw, norm, msg)
+                total_rejected += 1
+                continue
+
+            valid.append(raw)
+
+        if not valid:
+            print(f"[SKIP] {name}: all {len(records)} records rejected")
+            continue
+
+        ids = storage.upsert_many(valid)
         all_ids.extend(ids)
-        print(f"[OK] {name}: {len(records)} records consolidated ({len(ids)} upserted)")
+        rejected_in_site = len(records) - len(valid)
+        print(f"[OK] {name}: {len(valid)}/{len(records)} records consolidated ({len(ids)} upserted, {rejected_in_site} rejected)")
 
     counts = storage.get_counts_by_site()
     print("\n" + "=" * 50)
@@ -38,6 +88,8 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
     print("=" * 50)
     for c in counts:
         print(f"  {c['site']:20s}: {c['count']} listings")
+    if total_rejected:
+        print(f"\n  ** {total_rejected} records rejected (see output/rejected/)")
     print("=" * 50)
 
     if run_dedup and len(counts) > 1:

@@ -12,10 +12,12 @@ config/sites.yaml        YAML config (9 scrapers)
 scrapers/
   base.py                PropertySpider(Spider) — async fetch, parse, filter, output
   registry.py            Factory -> BaseScraper sync wrapper
-normalizer.py            Field normalization per site (raw → unified schema)
+models/
+  property.py            Pydantic v2 PropertyListing schema (pre-upsert validation)
+normalizer.py            Field normalization + Noida locality allowlist engine
 storage.py               SQLite persistence (listings + possible_duplicates)
 dedup.py                 Cross-site dedup (price±3%, area±5%, Jaccard locality, title similarity)
-consolidate.py           Reads output/ → upserts into SQLite → dedup
+consolidate.py           Reads output/ → normalize + Pydantic validate → upsert SQLite → dedup
 dashboard/
   build-data.py          SQLite → data.json
   index.html             Frontend (filters, images, listing links)
@@ -26,9 +28,9 @@ dashboard/
 **Data flow:**
 
 ```
-Scrape → output/{site}/{date}.json → consolidate.py → SQLite (upsert) → build-data.py → data.json → Deploy to Cloudflare Pages
-                                              ↓
-                                       cross-site dedup
+Scrape → output/{site}/{date}.json → consolidate.py → normalize + Pydantic validate → SQLite (upsert) → build-data.py → data.json → Deploy
+                                        ↓                        ↓
+                                   rejected/{date}.jsonl    cross-site dedup
 ```
 
 ---
@@ -205,6 +207,55 @@ Matches with confidence ≥ 0.70 are stored in `possible_duplicates` table.
 | **nobroker.in** | Active | `stealthy` | BLOCKED | TIMEOUT — `network_idle` never fires due to continuous SPA background requests (analytics, polling). StealthyFetcher unable to reach idle state. |
 
 Sites are configured with `fetcher: stealthy` and will attempt headless browser rendering on each run. If they yield 0 items for 3 consecutive runs, the auto-fallback in `BaseScraper._fallback_tracker` has already attempted stealthy mode (no further escalation).
+
+---
+
+## Data Validation & Locality Filtering
+
+### Noida Locality Allowlist
+
+**File:** `normalizer.py` (`NOIDA_LOCALITY_PATTERNS`)
+
+Raw substring matching (`contains "Noida"`) has been replaced with a normalized token match against an explicit allowlist of Noida/Greater Noida locality tokens:
+
+| Token | Example Matches |
+|-------|----------------|
+| `noida` | Any text containing "noida" |
+| `noida extension` | Noida Extension, Noida Extn |
+| `greater noida` | Greater Noida, Greater Noida West |
+| `noida sector \d+` | Noida Sector 62, Sector 62 Noida |
+| `sector \d+` | Sector 12, Sector 168 (standalone — scrapers already URL-filtered) |
+| `yamuna expressway` | Yamuna Expressway area |
+| Greek prefixes | Gamma, Zeta, Beta, Alpha, Delta, Omega + number |
+| Landmarks | Knowledge Park, Film City, Ecotech, TechZone, Pari(Chowk) |
+
+If the `locality` field is empty or unpopulated, the engine falls back to substring matching on `title` + `location` fields to catch listings where locality metadata is missing.
+
+**Allowlist source:** Manual curation of residential sectors notified by Noida Authority, Greater Noida Authority, and YEIDA (Yamuna Expressway Industrial Development Authority) as of July 2026.
+
+### Pre-Upsert Pydantic Validation
+
+**Files:** `models/property.py`, `consolidate.py`
+
+Every scraped record passes through two validation gates before reaching SQLite:
+
+1. **Schema validation** (`PropertyListing` Pydantic v2 model):
+   - `price_inr` > 0 or `None`
+   - `area_sqft` > 0 or `None`
+   - `bhk` between 0–10 or `None`
+   - `url` must be HTTP/HTTPS and domain must match expected site domain
+   - `title` must be a non-empty string
+
+2. **Locality allowlist** — locality must match a Noida allowlist token or fallback substring.
+
+Records that fail either gate are **not upserted**. They are streamed to `output/rejected/{date}.jsonl` with the rejection reason, the normalized fields, and the full raw record. Valid rows in the same batch continue to upsert without failing the pipeline.
+
+### Rejection Log Format
+
+```jsonl
+{"rejected_at_utc": "2026-07-26T...", "reason": "price_inr must be > 0, got -100",
+ "normalized": {...}, "raw": {...}}
+```
 
 ---
 
