@@ -246,6 +246,66 @@ sites:
       url: "socks5://127.0.0.1:9050"
       enabled: false
 
+  - name: housing
+    parser: json_embed
+    start_urls:
+      - "https://housing.com/in/buy/noida/Noida"
+    fetcher: stealthy
+    embed:
+      var: "__NEXT_DATA__"
+      data_path: "props.pageProps.listings"
+    selectors:
+      fields:
+        title: "title"
+        price: "price"
+        location: "address"
+        bhk: "bedrooms"
+        area: "builtUpArea"
+        url: "url"
+        image: "images"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: location
+      contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
+
+  - name: makaan
+    parser: jsonld
+    start_urls:
+      - "https://www.makaan.com/noida-residential-property-in-noida-buy-property-in-noida-city"
+    fetcher: stealthy
+    embed:
+      types:
+        - Product
+        - Apartment
+        - SingleFamilyResidence
+      filter:
+        field: "address.addressLocality"
+        contains: "Noida"
+    selectors:
+      fields:
+        title: "name"
+        description: "description"
+        price: "offers.price"
+        url: "url"
+        bedrooms: "numberOfRooms"
+        bathrooms: "numberOfBathroomsTotal"
+        floor_size: "floorSize"
+        locality: "address.addressLocality"
+        city: "address.addressRegion"
+        image: "image"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: locality
+      contains: "Noida"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
+
   - name: nobroker
     parser: json_embed
     start_urls:

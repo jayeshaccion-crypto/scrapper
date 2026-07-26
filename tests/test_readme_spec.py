@@ -15,6 +15,12 @@ class TestItem2StealthyFetcherDocs:
     def test_nobroker_documented(self):
         assert "nobroker" in CONTENT
 
+    def test_housing_documented(self):
+        assert "housing" in CONTENT
+
+    def test_makaan_documented(self):
+        assert "makaan" in CONTENT
+
     def test_stealthy_result_column(self):
         assert "StealthyFetcher Result" in CONTENT
 

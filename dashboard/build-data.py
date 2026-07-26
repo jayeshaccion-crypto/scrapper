@@ -25,6 +25,8 @@ SITE_BASE = {
     "olx": "https://www.olx.in",
     "proptiger": "https://www.proptiger.com",
     "proptiger-flats": "https://www.proptiger.com",
+    "housing": "https://housing.com",
+    "makaan": "https://www.makaan.com",
 }
 
 if not DB.exists():

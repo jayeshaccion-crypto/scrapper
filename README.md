@@ -46,6 +46,8 @@ Scrape → output/{site}/{date}.json → consolidate.py → normalize + Pydantic
 | **proptiger** | `css` | `dynamic` | `noida-real-estate` (project cards) |
 | **proptiger-flats** | `json_embed` | `dynamic` | `flats-in-noida` (individual units) |
 | **nobroker** | `json_embed` | `stealthy` | `property/sale/noida` (BLOCKED) |
+| **housing** | `json_embed` | `stealthy` | `in/buy/noida` (BLOCKED) |
+| **makaan** | `jsonld` | `stealthy` | `noida-residential-property` (BLOCKED) |
 
 ### Extraction Methods
 
@@ -221,6 +223,8 @@ Matches with confidence ≥ 0.70 are stored in `possible_duplicates` table.
 | Site | Config | Fetcher | Status | StealthyFetcher Result |
 |------|--------|---------|--------|----------------------|
 | **nobroker.in** | Active | `stealthy` | BLOCKED | TIMEOUT — `network_idle` never fires due to continuous SPA background requests (analytics, polling). StealthyFetcher unable to reach idle state. |
+| **housing.com** | Active | `stealthy` | BLOCKED | Next.js SPA — suspected captcha or bot detection on listing page. |
+| **makaan.com** | Active | `stealthy` | BLOCKED | Server-rendered page blocks non-browser user-agents at CDN layer. |
 
 Sites are configured with `fetcher: stealthy` and will attempt headless browser rendering on each run. If they yield 0 items for 3 consecutive runs, the auto-fallback in `BaseScraper._fallback_tracker` has already attempted stealthy mode (no further escalation).
 
