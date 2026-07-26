@@ -51,9 +51,10 @@ class PropertySpider(Spider):
         self.robots_txt_obey = config.get("respect_robots", True)
         self.allowed_domains = set()
 
-        # Adaptive parsing cache
+        # Adaptive parsing cache (only for sites that explicitly opt in)
+        has_cache = "adaptive_cache" in config
         cache_dir = config.get("adaptive_cache", ".scrapling_cache")
-        self.development_mode = True
+        self.development_mode = has_cache
         self.development_cache_dir = cache_dir
 
         # Proxy
@@ -70,31 +71,35 @@ class PropertySpider(Spider):
     def configure_sessions(self, manager):
         ft = self._fetcher_type
         proxy = self._proxy_config.get("url") if self._proxy_config.get("enabled") else None
+        wait_sel = self._config.get("wait_selector")
+
+        session_kwargs = dict(
+            headless=True,
+            load_dom=True,
+            proxy=proxy,
+            adaptive=True,
+        )
+        if wait_sel:
+            session_kwargs["wait_selector"] = wait_sel
 
         if ft == "stealthy":
             session = AsyncStealthySession(
-                headless=True,
                 network_idle=True,
-                load_dom=True,
                 timeout=90000,
                 solve_cloudflare=True,
-                proxy=proxy,
-                adaptive=True,
+                **session_kwargs,
             )
             manager.add("default", session, default=True)
         elif ft == "dynamic":
             network_idle = self._config.get("network_idle", True)
             session = AsyncDynamicSession(
-                headless=True,
                 network_idle=network_idle,
-                load_dom=True,
                 timeout=120000,
-                proxy=proxy,
-                adaptive=True,
+                **session_kwargs,
             )
             manager.add("default", session, default=True)
         else:
-            session = FetcherSession(proxy=proxy, adaptive=True)
+            session = FetcherSession(**session_kwargs)
             manager.add("default", session, default=True)
 
     async def start_requests(self):
