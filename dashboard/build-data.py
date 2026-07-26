@@ -1,3 +1,4 @@
+import html
 import json
 import sqlite3
 import sys
@@ -72,6 +73,20 @@ for row in rows:
         if isinstance(imgs, list) and imgs:
             img = imgs[0] if isinstance(imgs[0], str) else ""
     merged["image_url"] = img
+
+    # XSS sanitization: escape HTML-unsafe characters in free-text fields
+    _XSS_TEXT_FIELDS = frozenset({
+        "title", "description", "locality", "seller_type", "builder",
+        "contact_name", "full_address", "sub_locality", "building_name",
+        "society_name", "furnishing", "property_type", "floor", "status",
+        "possession", "ownership", "overlooking", "transaction_type",
+        "flooring", "parking", "facing", "project", "developer",
+    })
+    for k in _XSS_TEXT_FIELDS:
+        val = merged.get(k)
+        if isinstance(val, str):
+            merged[k] = html.escape(val)
+
     props.append(merged)
 
 OUT.parent.mkdir(parents=True, exist_ok=True)

@@ -185,6 +185,32 @@ cp /tmp/noida_properties-latest.db data/consolidated/noida_properties.db
 
 ---
 
+## Deployment & Secrets
+
+This project deploys to **Cloudflare Pages** (frontend) and **Cloudflare R2** (database backup). The CI/CD pipeline in `.github/workflows/scrape.yml` requires the following secrets configured in the GitHub repository (`Settings → Secrets and variables → Actions`):
+
+| Secret | Required By | Purpose |
+|--------|------------|---------|
+| `CLOUDFLARE_API_TOKEN` | `wrangler pages deploy` | Cloudflare API token with `Cloudflare Pages` permission (`Write`) |
+| `CLOUDFLARE_ACCOUNT_ID` | R2 `--endpoint-url` | Cloudflare account ID; used to construct `https://<account-id>.r2.cloudflarestorage.com` |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID` | `aws s3 cp` | R2 S3-compatible credential key ID |
+| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | `aws s3 cp` | R2 S3-compatible credential secret |
+| `R2_BUCKET_NAME` | `aws s3 cp` | R2 bucket name where compressed DB snapshots are stored |
+
+To set them:
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN --body "your-token"
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "your-account-id"
+gh secret set CLOUDFLARE_R2_ACCESS_KEY_ID --body "your-r2-key-id"
+gh secret set CLOUDFLARE_R2_SECRET_ACCESS_KEY --body "your-r2-secret"
+gh secret set R2_BUCKET_NAME --body "your-bucket-name"
+```
+
+**Dashboard URL:** `https://noida-property-dashboard.pages.dev` (configured in `.github/workflows/scrape.yml` and Cloudflare Pages project settings).
+
+---
+
 ## Duplicate Detection
 
 Cross-site dedup (`dedup.py`) compares listing pairs from different sites using:
@@ -261,7 +287,128 @@ Records that fail either gate are **not upserted**. They are streamed to `output
 
 ## Compliance
 
-- **robots.txt**: Checked by default (`respect_robots: true`). 99acres explicitly disabled.
+- **robots.txt**: Checked by default (`respect_robots: true`). 99acres explicitly disabled (see `config/sites.yaml` for justification).
 - **Rate limiting**: 3s between requests per site (minimum 1s enforced in code).
 - **Proxy rotation**: Configured in `config/sites.yaml` per-site as `proxy.url` (default: `socks5://127.0.0.1:9050`) with `proxy.enabled: false`. Proxy rotation is **disabled by default** — sites currently use the machine's public IP. To enable, set `proxy.enabled: true` for the target site and ensure the proxy service (e.g., local Tor daemon) is running. No open-source proxy feed is configured; the local Tor binding is the recommended free option.
 - **Responsibility**: Scraping legality depends on the target site's ToS, data type, and your jurisdiction.
+
+---
+
+## Security & AI Compliance
+
+### XSS Defense
+
+The dashboard (`dashboard/index.html`) renders property data using `innerHTML`. To prevent stored XSS attacks via poisoned listing fields, `dashboard/build-data.py` applies `html.escape()` to all free-text fields (`title`, `description`, `locality`, `seller_type`, etc.) before serializing to `data.json`.
+
+### PII Redaction
+
+`normalizer.py` implements regex-based PII redaction on the `description` field before it reaches the database:
+
+| PII Type | Pattern | Replacement |
+|----------|---------|-------------|
+| Indian mobile phone | `(?:\+91[\-\s]?)?[6-9]\d{9}` | `[REDACTED]` |
+| Email address | `[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}` | `[REDACTED]` |
+
+The redaction runs inside `normalize()` on every raw record, so PII is stripped before Pydantic validation and SQLite upsert. The redacted field value is stored in both the normalized record and the `raw_data` JSON blob.
+
+### LLM Prompt-Injection Warning
+
+This scraper does **not** send scraped data to an LLM endpoint. If you extend it to do so (e.g., using Scrapling's `--ai-targeted` flag for AI-driven extraction), be aware that **adversarial content on the scraped page can influence LLM output**. Real-estate listings, for example, could contain hidden instructions in the description field that alter extraction behavior or leak internal prompt context.
+
+Mitigations to apply if you enable AI-targeted extraction:
+
+1. **Validate and sanitize all input** before it reaches the LLM prompt (already done for XSS and PII as described above).
+2. **Isolate the extraction prompt** from user-facing content — never interpolate raw field values directly into system instructions.
+3. **Scan for prompt-injection patterns** in description, title, and other free-text fields before passing to the model.
+4. **Use output guards** — constrain the LLM's response schema and reject any output that deviates from the expected format.
+
+When using Scrapling's `--ai-targeted` feature, review the `scrapling/scrapling/llm.py` source (specifically the prompt template construction) to ensure no raw page content is injected into the system-level instruction context.
+
+---
+
+## Site Config Schema Reference
+
+**File:** `config/sites.yaml`
+
+Each entry under `sites:` supports the following top-level keys:
+
+| Key | Required | Type | Description |
+|-----|----------|------|-------------|
+| `name` | **Yes** | `string` | Site identifier (used in `--site` CLI arg and DB `source_site` column) |
+| `parser` | **Yes** | `string` | Extraction method: `json_embed`, `jsonld`, or `css` |
+| `start_urls` | **Yes** | `list[string]` | One or more starting URLs for the scrape |
+| `fetcher` | **Yes** | `string` | Fetch mode: `dynamic` (real browser) or `stealthy` (anti-bot browser) |
+| `wait_selector` | No | `string` | CSS selector to wait for before extracting (css parser only) |
+| `respect_robots` | No | `bool` | Whether to obey robots.txt (default `true`). Disabled for 99acres (see Compliance) |
+| `embed` | Conditional | `dict` | Required for `json_embed` / `jsonld` parsers. See sub-schema below |
+| `selectors` | Conditional | `dict` | Required for `css` and `json_embed` parsers. Contains `item` (css parser) and `fields` |
+| `pagination` | No | `dict` | Pagination config: `max_pages` (css parser only) |
+| `rate_limit_seconds` | No | `float` | Min seconds between requests (default: `3.0`) |
+| `output_format` | No | `string` | Default: `json` |
+| `location_filter` | No | `dict` | Post-extraction filter: `field` + `contains` string. All sites use `field: locality` / `field: location`, `contains: "Noida"` |
+| `adaptive_cache` | No | `string` | Cache directory path for adaptive DOM relocation (css parser only). E.g., `.scrapling_cache` |
+| `proxy` | No | `dict` | Proxy config with `url` and `enabled` bool |
+
+### Embed sub-schema
+
+For `parser: json_embed`:
+- `var` (required): JavaScript variable name containing the data
+- `data_path` (required): Dot-separated path to the array within the parsed JSON
+
+For `parser: jsonld`:
+- `types` (required): JSON-LD types to extract (e.g., `Product`, `Apartment`)
+- `filter` (optional): Field + contains filter applied before extraction
+
+### Selectors sub-schema
+
+For `parser: css`:
+- `item` (required): CSS selector for the repeated listing element
+- `fields` (required): Map of field names to CSS selectors with pseudo-selectors (`::text`, `::attr(href)`) and comma-separated fallbacks
+
+For `parser: json_embed`:
+- `fields` (required): Map of field names to JSON key paths
+
+### Example
+
+```yaml
+sites:
+  - name: example
+    parser: css
+    start_urls:
+      - "https://example.com/listings"
+    fetcher: dynamic
+    wait_selector: ".listing-card"
+    pagination:
+      max_pages: 3
+    selectors:
+      item: ".listing-card"
+      fields:
+        title: ".listing-title::text"
+        price: ".listing-price::text"
+        url: "a::attr(href)"
+    rate_limit_seconds: 3.0
+    output_format: json
+    location_filter:
+      field: title
+      contains: "Noida"
+    adaptive_cache: ".scrapling_cache"
+    proxy:
+      url: "socks5://127.0.0.1:9050"
+      enabled: false
+```
+
+---
+
+### Compliance Justification: 99acres robots.txt
+
+99acres `/robots.txt` issues a blanket `Disallow: /` for all user-agents. This project disables `respect_robots` for 99acres with the following mitigation:
+
+| Concern | Mitigation |
+|---------|------------|
+| `Disallow: /` | Scrapes only the Noida listing SRP (search results page) — no user accounts, no auth-gated data |
+| Request volume | `rate_limit_seconds: 3.0` — one request every 3 seconds (20 req/min), well below aggressive thresholds |
+| Data type | Public listing metadata (price, area, locality, description) — no personal or private data |
+| PII handling | Phone numbers and emails redacted in `normalizer.py` via regex before storage |
+| XSS defense | All free-text fields escaped via `html.escape()` in `build-data.py` before dashboard display |
+
+The scraper does **not** bypass login walls, access private APIs, or circumvent rate limits. It extracts the same public data that any browser viewing `https://www.99acres.com/property-in-noida-ffid` can see.

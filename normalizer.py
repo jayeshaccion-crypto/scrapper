@@ -4,6 +4,25 @@ from pathlib import Path
 
 
 # ------------------------------------------------------------------ #
+#  PII Redaction Patterns                                            #
+# ------------------------------------------------------------------ #
+# Indian mobile phone: optional +91 prefix, then 10 digits starting
+# with 6-9 (valid as per DoT numbering plan)
+_PII_PHONE_RE = re.compile(r"(?:\+91[\-\s]?)?[6-9]\d{9}")
+# RFC 5322 simplified email pattern
+_PII_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+
+def _redact_pii(text: str | None) -> str | None:
+    """Replace Indian phone numbers and email addresses with [REDACTED]."""
+    if not text:
+        return text
+    text = _PII_PHONE_RE.sub("[REDACTED]", text)
+    text = _PII_EMAIL_RE.sub("[REDACTED]", text)
+    return text
+
+
+# ------------------------------------------------------------------ #
 #  Noida Locality Allowlist                                          #
 # ------------------------------------------------------------------ #
 # Source: Manual curation of Noida, Greater Noida, and surrounding
@@ -269,6 +288,11 @@ def normalize(record: dict) -> dict:
     site = record.get("site_name", "")
     field_map = SITE_FIELD_MAP.get(site, SITE_FIELD_MAP.get("99acres"))
     normalized = {"schema_version": SCHEMA_VERSION}
+
+    # PII redaction on raw description before any field mapping
+    desc = record.get("description")
+    if isinstance(desc, str):
+        record["description"] = _redact_pii(desc)
     for out_key, (src_key, transform) in field_map.items():
         if src_key is None and transform is None:
             normalized[out_key] = None
