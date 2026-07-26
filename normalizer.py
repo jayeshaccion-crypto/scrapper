@@ -32,7 +32,7 @@ NOIDA_LOCALITY_PATTERNS: list[re.Pattern] = [
     re.compile(r"alpha\s+\d{1,2}"),
     re.compile(r"delta\s+\d{1,2}"),
     re.compile(r"omega\s+\d{1,2}"),
-    re.compile(r"pari(?:j|chowk)"),
+    re.compile(r"pari\s*(?:j|chowk)"),
     re.compile(r"knowledge\s+park"),
     re.compile(r"film\s+city"),
     re.compile(r"ecotech"),
