@@ -223,7 +223,7 @@ Matches with confidence ≥ 0.70 are stored in `possible_duplicates` table.
 | Site | Config | Fetcher | Status | StealthyFetcher Result |
 |------|--------|---------|--------|----------------------|
 | **nobroker.in** | Active | `stealthy` | BLOCKED | TIMEOUT — `network_idle` never fires due to continuous SPA background requests (analytics, polling). StealthyFetcher unable to reach idle state. |
-| **housing.com** | Active | `stealthy` | BLOCKED | Next.js SPA — suspected captcha or bot detection on listing page. |
+| **housing.com** | Active | `stealthy` | BLOCKED | HTTP 406 — server rejects automated requests. DNS occasionally fails to resolve. Custom `__INITIAL_STATE__` JS embed (not standard `__NEXT_DATA__`). |
 | **makaan.com** | Active | `stealthy` | BLOCKED | Server-rendered page blocks non-browser user-agents at CDN layer. |
 
 Sites are configured with `fetcher: stealthy` and will attempt headless browser rendering on each run. If they yield 0 items for 3 consecutive runs, the auto-fallback in `BaseScraper._fallback_tracker` has already attempted stealthy mode (no further escalation).

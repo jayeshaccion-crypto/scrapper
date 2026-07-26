@@ -249,11 +249,11 @@ sites:
   - name: housing
     parser: json_embed
     start_urls:
-      - "https://housing.com/in/buy/noida/Noida"
+      - "https://housing.com/in/buy/noida"
     fetcher: stealthy
     embed:
-      var: "__NEXT_DATA__"
-      data_path: "props.pageProps.listings"
+      var: "__INITIAL_STATE__"
+      data_path: "searchResults"
     selectors:
       fields:
         title: "title"
