@@ -77,19 +77,18 @@ jobs:
 
       - name: Sync DB to Cloudflare R2
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
         run: |
           BACKUP="noida_properties-$(date -u +%Y%m%d_%H%M%S).db.gz"
           gzip -c data/consolidated/noida_properties.db > "/tmp/$BACKUP"
           aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/db-backups/$BACKUP" \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
-            --region auto
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
           aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/noida_properties-latest.db.gz" \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
-            --region auto
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
           echo "R2_BACKUP=$BACKUP" >> $GITHUB_ENV
 
       - name: Build dashboard data from DB
