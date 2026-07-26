@@ -2,6 +2,7 @@
 
 import yaml
 from pathlib import Path
+from urllib.parse import urlparse
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "sites.yaml"
 
@@ -95,6 +96,32 @@ class TestStealthyFetcher:
         for s in sites:
             if s["name"] in active:
                 assert s["fetcher"] == "dynamic", f"{s['name']} should use dynamic, not {s['fetcher']}"
+
+
+class TestSiteDomains:
+    """Every config site must have a domain entry in PropertyListing."""
+
+    def test_all_sites_have_domain_in_model(self):
+        from models.property import SITE_DOMAINS
+        sites = load_sites()
+        for s in sites:
+            assert s["name"] in SITE_DOMAINS, (
+                f"{s['name']} missing from SITE_DOMAINS in models/property.py"
+            )
+            domain = urlparse(s["start_urls"][0]).netloc
+            assert SITE_DOMAINS[s["name"]] == domain, (
+                f"{s['name']}: SITE_DOMAINS has '{SITE_DOMAINS[s['name']]}' "
+                f"but config has '{domain}'"
+            )
+
+    def test_no_extra_domains(self):
+        from models.property import SITE_DOMAINS
+        sites = load_sites()
+        config_names = {s["name"] for s in sites}
+        for name in SITE_DOMAINS:
+            assert name in config_names, (
+                f"SITE_DOMAINS has '{name}' but no matching config site"
+            )
 
 
 class TestSiteCount:

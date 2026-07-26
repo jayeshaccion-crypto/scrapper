@@ -1,17 +1,36 @@
+from pathlib import Path
 from urllib.parse import urlparse
+
+import yaml
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-SITE_DOMAINS: dict[str, str] = {
-    "99acres": "www.99acres.com",
-    "magicbricks": "www.magicbricks.com",
-    "squareyards": "www.squareyards.com",
-    "olx": "www.olx.in",
-    "proptiger": "www.proptiger.com",
-    "proptiger-flats": "www.proptiger.com",
-    "nobroker": "www.nobroker.in",
-}
+_CONFIG_PATH = None
+
+
+def _load_site_domains() -> dict[str, str]:
+    global _CONFIG_PATH
+    if _CONFIG_PATH is None:
+        _CONFIG_PATH = __file__
+    # Walk up to find config/sites.yaml relative to this file
+    base = Path(_CONFIG_PATH).resolve().parent.parent
+    cfg = base / "config" / "sites.yaml"
+    if not cfg.exists():
+        return {}
+    with open(cfg, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    domains: dict[str, str] = {}
+    for site in data.get("sites", []):
+        urls = site.get("start_urls", [])
+        if urls:
+            domain = urlparse(urls[0]).netloc
+            if domain:
+                domains[site["name"]] = domain
+    return domains
+
+
+SITE_DOMAINS: dict[str, str] = _load_site_domains()
 
 
 class PropertyListing(BaseModel):
