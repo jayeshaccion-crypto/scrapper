@@ -58,6 +58,9 @@
 
     .theme-toggle { background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .theme-toggle:hover { border-color: var(--accent); }
+
+    #gotop { position: fixed; bottom: 24px; right: 24px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 20px; cursor: pointer; display: none; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100; transition: opacity .2s; }
+    #gotop:hover { border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -69,13 +72,15 @@
     <button class="theme-toggle" id="theme-toggle">☀️ Light</button>
   </div>
   <div class="stats" id="stats"></div>
-  <div class="filters" id="filters">
-    <div><label>BHK</label><br><select id="f-bhk"><option value="">All</option></select></div>
-    <div><label>Min Price (₹)</label><br><input id="f-min-price" type="number" placeholder="0"></div>
-    <div><label>Max Price (₹)</label><br><input id="f-max-price" type="number" placeholder="∞"></div>
-    <div><label>Min Area (sqft)</label><br><input id="f-min-area" type="number" placeholder="0"></div>
-    <div><label>Search</label><br><input id="f-search" type="text" placeholder="locality, building..."></div>
-  </div>
+      <div class="filters" id="filters">
+        <div><label>Site</label><br><select id="f-site"><option value="">All</option></select></div>
+        <div><label>BHK</label><br><select id="f-bhk"><option value="">All</option></select></div>
+        <div><label>Min Price (₹)</label><br><input id="f-min-price" type="number" placeholder="0"></div>
+        <div><label>Max Price (₹)</label><br><input id="f-max-price" type="number" placeholder="∞"></div>
+        <div><label>Min Area (sqft)</label><br><input id="f-min-area" type="number" placeholder="0"></div>
+        <div><label>Search</label><br><input id="f-search" type="text" placeholder="locality, building..."></div>
+      </div>
+      <button id="gotop" title="Go to top">↑</button>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">No properties match your filters.</div>
 
@@ -107,6 +112,10 @@
     }
 
     function populateFilters() {
+      const sites = [...new Set(allProps.map(p => p.site_name))].sort();
+      const fSite = document.getElementById('f-site');
+      sites.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; fSite.appendChild(o); });
+
       const bhkSet = [...new Set(allProps.map(p => p.bedrooms).filter(Boolean))].sort((a,b) => a-b);
       const fBhk = document.getElementById('f-bhk');
       bhkSet.forEach(b => { const o = document.createElement('option'); o.value = b; o.textContent = b + ' BHK'; fBhk.appendChild(o); });
@@ -114,6 +123,7 @@
 
     function getFilters() {
       return {
+        site: document.getElementById('f-site').value,
         bhk: document.getElementById('f-bhk').value,
         minPrice: Number(document.getElementById('f-min-price').value) || 0,
         maxPrice: Number(document.getElementById('f-max-price').value) || Infinity,
@@ -123,6 +133,7 @@
     }
 
     function matches(p, f) {
+      if (f.site && p.site_name !== f.site) return false;
       if (f.bhk && String(p.bedrooms) !== f.bhk) return false;
       if (p.price_raw < f.minPrice) return false;
       if (p.price_raw > f.maxPrice) return false;
@@ -205,6 +216,12 @@
       const isDark = document.body.classList.toggle('dark');
       document.getElementById('theme-toggle').textContent = isDark ? '🌙 Dark' : '☀️ Light';
     });
+
+    const gotop = document.getElementById('gotop');
+    window.addEventListener('scroll', () => {
+      gotop.style.display = window.scrollY > 600 ? 'flex' : 'none';
+    });
+    gotop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
     loadData();
   </script>
