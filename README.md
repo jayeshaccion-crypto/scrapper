@@ -292,7 +292,7 @@ The dashboard (`dashboard/index.html`) renders property data using `innerHTML`. 
 
 ### PII Redaction
 
-`normalizer.py` implements regex-based PII redaction across 13 known free-text fields (`title`, `description`, `seoDesc`, `contact_name`, `builder`, `full_address`, `sub_locality`, `building_name`, `society_name`, `locality`, `location`, `seller_type`, `user_type`) before they reach the database:
+`normalizer.py` implements regex-based PII redaction across 12 known free-text fields (`title`, `description`, `contact_name`, `builder`, `full_address`, `sub_locality`, `building_name`, `society_name`, `locality`, `location`, `seller_type`, `user_type`) before they reach the database:
 
 | PII Type | Pattern | Replacement |
 |----------|---------|-------------|

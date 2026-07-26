@@ -17,7 +17,7 @@ _PII_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 # Free-text fields in raw records that may contain PII and should be
 # redacted before DB upsert.
 _PII_TEXT_FIELDS: frozenset[str] = frozenset([
-    "title", "description", "seoDesc", "contact_name", "builder",
+    "title", "description", "contact_name", "builder",
     "full_address", "sub_locality", "building_name", "society_name",
     "locality", "location", "seller_type", "user_type",
 ])
