@@ -44,8 +44,6 @@ Scrape → output/{site}/{date}.json → consolidate.py → SQLite (upsert) → 
 | **proptiger** | `css` | `dynamic` | `noida-real-estate` (project cards) |
 | **proptiger-flats** | `json_embed` | `dynamic` | `flats-in-noida` (individual units) |
 | **nobroker** | `json_embed` | `stealthy` | `property/sale/noida` (BLOCKED) |
-| **housing** | `json_embed` | `stealthy` | `in/property-for-sale-noida` (PARTIAL) |
-| **makaan** | `json_embed` | `stealthy` | `noida-residential-property-in-noida-buy` (REDIRECT) |
 
 ### Extraction Methods
 
@@ -142,11 +140,10 @@ Built with vanilla HTML/CSS/JS. Features:
 **Schedule:** Every hour (`0 * * * *`)
 **Concurrency:** `group: scrape-db` — ensures only one scrape runs at a time, eliminating race conditions on the SQLite DB.
 
-### Job 1 — `scrape`:
+### Job 1 — `scrape` (runs inside `ghcr.io/d4vinci/scrapling:latest`):
 
-1. Checkout repo + setup Python 3.12
-2. Cache pip packages, Playwright browsers, and adaptive fingerprints
-3. `pip install -r requirements.txt` + `playwright install chromium`
+1. Checkout repo + install runtime tools (`gh`, `awscli`, Python deps) inside the Scrapling Docker container
+2. `actions/cache` restores adaptive fingerprints from `./.scrapling_cache`
 3. `gh run download` previous artifacts: `scraper-db` (SQLite DB), `scraper-state` (yield history + fallback state)
 4. `python main.py --all` — scrape all sites
 5. `python check_anomalies.py` — compare per-site yield against 7-day rolling median; writes to `$GITHUB_STEP_SUMMARY`
@@ -206,8 +203,6 @@ Matches with confidence ≥ 0.70 are stored in `possible_duplicates` table.
 | Site | Config | Fetcher | Status | StealthyFetcher Result |
 |------|--------|---------|--------|----------------------|
 | **nobroker.in** | Active | `stealthy` | BLOCKED | TIMEOUT — `network_idle` never fires due to continuous SPA background requests (analytics, polling). StealthyFetcher unable to reach idle state. |
-| **housing.com** | Active | `stealthy` | PARTIAL | TIMEOUT — `network_idle` never fires (Akamai WAF + continuous analytics requests). WAF returns 406 on Noida-specific paths regardless of headless mode. |
-| **makaan.com** | Active | `stealthy` | REDIRECT | Not independently tested; inherits housing.com WAF behavior (redirects to housing.com). |
 
 Sites are configured with `fetcher: stealthy` and will attempt headless browser rendering on each run. If they yield 0 items for 3 consecutive runs, the auto-fallback in `BaseScraper._fallback_tracker` has already attempted stealthy mode (no further escalation).
 

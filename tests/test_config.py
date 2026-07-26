@@ -81,7 +81,7 @@ class TestAdaptiveCache:
 class TestStealthyFetcher:
     """StealthyFetcher must be configured for blocked sites (Item 2)."""
 
-    REQUIRED_STEALTHY = {"nobroker", "housing", "makaan"}
+    REQUIRED_STEALTHY = {"nobroker"}
 
     def test_blocked_sites_use_stealthy(self):
         sites = load_sites()
@@ -102,9 +102,9 @@ class TestSiteCount:
 
     def test_total_sites(self):
         sites = load_sites()
-        assert len(sites) == 9, f"Expected 9 sites, got {len(sites)}"
+        assert len(sites) == 7, f"Expected 7 sites, got {len(sites)}"
 
-    EXPECTED = {"magicbricks", "99acres", "squareyards", "olx", "proptiger", "proptiger-flats", "nobroker", "housing", "makaan"}
+    EXPECTED = {"magicbricks", "99acres", "squareyards", "olx", "proptiger", "proptiger-flats", "nobroker"}
 
     def test_all_sites_present(self):
         sites = load_sites()

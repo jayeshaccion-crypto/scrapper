@@ -167,27 +167,6 @@ SITE_FIELD_MAP = {
         "longitude": (None, None),
         "amenities": (None, None),
     },
-    "makaan": {
-        "source_site": ("site_name", None),
-        "listing_id": (None, None),
-        "url": (None, None),
-        "title": ("title", None),
-        "price_inr": ("price", None),
-        "price_per_sqft_inr": (None, None),
-        "area_sqft": (None, None),
-        "bhk": (None, None),
-        "property_type": (None, lambda _: "apartment"),
-        "furnishing": (None, None),
-        "floor": (None, None),
-        "total_floors": (None, None),
-        "age_years": (None, None),
-        "locality": ("locality", None),
-        "city": (None, lambda _: "Noida"),
-        "seller_type": (None, None),
-        "latitude": (None, None),
-        "longitude": (None, None),
-        "amenities": (None, None),
-    },
 }
 
 SCHEMA_VERSION = "1.0"
