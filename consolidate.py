@@ -81,8 +81,8 @@ def consolidate_sites(site_names: list[str] | None = None, output_dir: str = "ou
 
         ids = storage.upsert_many(valid_raw, normalized=valid_norm)
         all_ids.extend(ids)
-        rejected_in_site = len(records) - len(valid)
-        print(f"[OK] {name}: {len(valid)}/{len(records)} records consolidated ({len(ids)} upserted, {rejected_in_site} rejected)")
+        rejected_in_site = len(records) - len(valid_raw)
+        print(f"[OK] {name}: {len(valid_raw)}/{len(records)} records consolidated ({len(ids)} upserted, {rejected_in_site} rejected)")
 
     counts = storage.get_counts_by_site()
     print("\n" + "=" * 50)
