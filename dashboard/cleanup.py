@@ -115,9 +115,10 @@ def main():
 
     # ── Step 5: Rebuild data.json ──
     print(f"\n  Rebuilding data.json ...")
+    build_data = Path(__file__).resolve().parent / "build-data.py"
     result = subprocess.run(
-        [sys.executable, "dashboard/build-data.py"],
-        capture_output=True, text=True, cwd=DB.parent.parent,
+        [sys.executable, str(build_data)],
+        capture_output=True, text=True,
     )
     if result.returncode:
         print(f"  ERROR: build-data.py failed:\n{result.stderr}")
