@@ -39,7 +39,7 @@ Scrape → output/{site}/{date}.json → consolidate.py → normalize + Pydantic
 
 | Site | Parser | Fetcher | URL |
 |------|--------|---------|-----|
-| **99acres** | `json_embed` | `dynamic` | `property-in-noida` |
+| **99acres** | `json_embed` | `stealthy` | `property-in-noida` (BLOCKED) |
 | **magicbricks** | `json_embed` | `dynamic` | `flats-in-noida-for-sale` |
 | **squareyards** | `jsonld` | `dynamic` | `sale/property-for-sale-in-noida` |
 | **olx** | `css` | `dynamic` | 5 pages (`?page=1..5`) |

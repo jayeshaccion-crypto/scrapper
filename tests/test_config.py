@@ -82,7 +82,7 @@ class TestAdaptiveCache:
 class TestStealthyFetcher:
     """StealthyFetcher must be configured for blocked sites (Item 2)."""
 
-    REQUIRED_STEALTHY = {"nobroker", "proptiger"}
+    REQUIRED_STEALTHY = {"nobroker", "99acres"}
 
     def test_blocked_sites_use_stealthy(self):
         sites = load_sites()
@@ -92,7 +92,7 @@ class TestStealthyFetcher:
 
     def test_dynamic_sites_not_stealthy(self):
         sites = load_sites()
-        active = {"magicbricks", "99acres", "squareyards", "olx", "proptiger-flats"}
+        active = {"magicbricks", "squareyards", "olx", "proptiger", "proptiger-flats"}
         for s in sites:
             if s["name"] in active:
                 assert s["fetcher"] == "dynamic", f"{s['name']} should use dynamic, not {s['fetcher']}"

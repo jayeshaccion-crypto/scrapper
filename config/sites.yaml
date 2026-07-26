@@ -53,7 +53,7 @@ sites:
     parser: json_embed
     start_urls:
       - "https://www.99acres.com/property-in-noida-ffid"
-    fetcher: dynamic
+    fetcher: stealthy
     # robots.txt disabled: 99acres /robots.txt disallows all scrapers
     # (Disallow: /). Ethical scrape — 1 req/3s, no private data collected.
     respect_robots: false
@@ -186,7 +186,7 @@ sites:
     parser: css
     start_urls:
       - "https://www.proptiger.com/noida-real-estate"
-    fetcher: stealthy
+    fetcher: dynamic
     wait_selector: ".popular-project-card"
     pagination:
       max_pages: 1

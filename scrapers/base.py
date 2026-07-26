@@ -255,11 +255,18 @@ class PropertySpider(Spider):
 
     @staticmethod
     def _extract_js_var(body: str, var_name: str):
+        # Try JS variable assignment pattern first: window.VAR = {...}
         pattern = re.compile(rf'(?:window\.)?{re.escape(var_name)}\s*=\s*(\{{)', re.DOTALL)
         m = pattern.search(body)
+        start = m.start(1) if m else None
+        # Fall back to Next.js <script id="VAR">JSON</script> pattern
         if not m:
+            pattern2 = re.compile(rf'<script[^>]*?id="{re.escape(var_name)}"[^>]*?>\s*(\{{)', re.DOTALL)
+            m2 = pattern2.search(body)
+            if m2:
+                start = m2.start(1)
+        if start is None:
             return None
-        start = m.start(1)
         depth = 0
         in_string = False
         escape = False
