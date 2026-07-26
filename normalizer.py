@@ -150,6 +150,36 @@ def _extract_price_from_text(text: str) -> float | None:
     return None
 
 
+def _parse_olx_area(v):
+    m = re.search(r'([\d,]+)\s*sq\s*ft', v, re.I)
+    return float(m.group(1).replace(',', '')) if m else None
+
+
+def _parse_olx_property_type(v):
+    if 'for-rent' in v.lower() or '/rent/' in v.lower():
+        return 'rent'
+    if 'for-sale' in v.lower() or '/sale/' in v.lower():
+        return 'sale'
+    return None
+
+
+_FURNISH_KEYWORDS = [
+    ("unfurnished", "Unfurnished"),
+    ("semi furnished", "Semi-Furnished"),
+    ("semifurnished", "Semi-Furnished"),
+    ("fully furnished", "Furnished"),
+    ("furnished", "Furnished"),
+]
+
+
+def _parse_olx_furnishing(v):
+    vl = v.lower()
+    for kw, label in _FURNISH_KEYWORDS:
+        if kw in vl:
+            return label
+    return None
+
+
 def _parse_bhk_float(v):
     """Handle values like '3.5', '6+', '2.5' by flooring to integer."""
     m = re.search(r'([\d.]+)', str(v))
@@ -233,10 +263,10 @@ SITE_FIELD_MAP = {
         "title": ("title", None),
         "price_inr": ("price", lambda v: float(v.replace('\u20b9', '').replace(',', '').strip()) if v else None),
         "price_per_sqft_inr": (None, None),
-        "area_sqft": (None, None),
+        "area_sqft": ("details", lambda v: _parse_olx_area(v) if v else None),
         "bhk": ("details", lambda v: _parse_bhk(v.replace('BHK', ' BHK')) if v and re.search(r'(\d+)\s*BHK', v, re.I) else None),
-        "property_type": ("details", lambda v: 'rent' if v and 'rent' in v.lower() else ('sale' if v and 'sale' in v.lower() else None)),
-        "furnishing": ("details", lambda v: v if v and 'furnish' in v.lower() else None),
+        "property_type": ("url", lambda v: _parse_olx_property_type(v) if v else None),
+        "furnishing": ("title", lambda v: _parse_olx_furnishing(v) if v else None),
         "floor": (None, None),
         "total_floors": (None, None),
         "age_years": (None, None),
