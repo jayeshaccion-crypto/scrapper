@@ -223,7 +223,7 @@ Matches with confidence ≥ 0.70 are stored in `possible_duplicates` table.
 | Site | Config | Fetcher | Status | StealthyFetcher Result |
 |------|--------|---------|--------|----------------------|
 | **nobroker.in** | Active | `stealthy` | BLOCKED | TIMEOUT — `network_idle` never fires due to continuous SPA background requests (analytics, polling). StealthyFetcher unable to reach idle state. |
-| **housing.com** | Active | `stealthy` | BLOCKED | HTTP 406 "Security Alert" on ALL pages including homepage — CDN-edge bot detection blocks entire IP range. Custom `__INITIAL_STATE__` JS embed. May work from different IP (CI runner). |
+| **housing.com** | Active | `stealthy` | BLOCKED | Behind **Akamai CDN** (`errors.edgesuite.net`). Direct: 406, Tor: 403, Tor + StealthyFetcher: 403. Akamai blocks this IP range and all Tor exit nodes. May work from residential IP not in Akamai blocklist. Custom `__INITIAL_STATE__` JS embed. |
 | **makaan.com** | Active | `stealthy` | BLOCKED | Server-rendered page blocks non-browser user-agents at CDN layer. |
 
 Sites are configured with `fetcher: stealthy` and will attempt headless browser rendering on each run. If they yield 0 items for 3 consecutive runs, the auto-fallback in `BaseScraper._fallback_tracker` has already attempted stealthy mode (no further escalation).
