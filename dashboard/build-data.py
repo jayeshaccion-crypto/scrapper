@@ -22,7 +22,7 @@ if not DB.exists():
 
 conn = sqlite3.connect(str(DB))
 conn.row_factory = sqlite3.Row
-rows = conn.execute("SELECT * FROM listings ORDER BY source_site, price_inr").fetchall()
+rows = conn.execute("SELECT * FROM listings ORDER BY scraped_at_utc DESC, source_site, price_inr").fetchall()
 conn.close()
 
 props = []
