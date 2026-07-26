@@ -1,10 +1,10 @@
-name: Dashboard Cleanup
+name: Clean & Reset
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "yes" to confirm PII redaction + dashboard redeploy'
+        description: 'Type "yes" to confirm deleting ALL data (DB, outputs, dashboard data, state)'
         required: true
         default: ''
 
@@ -12,13 +12,9 @@ concurrency:
   group: cleanup-db
   cancel-in-progress: false
 
-env:
-  GH_TOKEN: ${{ github.token }}
-
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    environment: deploy
     steps:
       - uses: actions/checkout@v4
 
@@ -29,88 +25,11 @@ jobs:
             exit 1
           fi
 
-      - name: Install Python deps + AWS CLI
-        run: |
-          pip install -q -r requirements.txt awscli
-
       - name: Create required directories
         run: mkdir -p logs output data/consolidated
 
-      - name: Download latest DB from Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-        run: |
-          aws s3 cp "s3://$R2_BUCKET_NAME/noida_properties-latest.db.gz" /tmp/noida_properties-latest.db.gz \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
-          gzip -d /tmp/noida_properties-latest.db.gz
-          cp /tmp/noida_properties-latest.db data/consolidated/noida_properties.db
-          echo "DB restored: $(wc -c < data/consolidated/noida_properties.db) bytes"
-
-      - name: Run PII redaction backfill + rebuild data.json
+      - name: Delete all data (outputs, dashboard data, DB, state)
         run: python dashboard/cleanup.py
 
-      - name: Verify cleanup output
-        run: |
-          echo "Records in DB:"
-          python -c "import sqlite3; c=sqlite3.connect('data/consolidated/noida_properties.db'); print(c.execute('SELECT COUNT(*) FROM listings').fetchone()[0]); c.close()"
-          echo "data.json size: $(wc -c < dashboard/data.json) bytes"
-
-      - name: Upload cleaned DB to Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-        run: |
-          BACKUP="noida_properties-$(date -u +%Y%m%d_%H%M%S)-cleaned.db.gz"
-          gzip -c data/consolidated/noida_properties.db > "/tmp/$BACKUP"
-          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/db-backups/$BACKUP" \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
-          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/noida_properties-latest.db.gz" \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
-          echo "R2_BACKUP=$BACKUP" >> $GITHUB_ENV
-
-      - name: Upload cleaned DB as artifact (for subsequent scrape runs)
-        uses: actions/upload-artifact@v4
-        with:
-          name: scraper-db
-          path: data/consolidated/noida_properties.db
-          retention-days: 90
-          overwrite: true
-
-      - name: Upload dashboard artifact for deploy
-        uses: actions/upload-artifact@v4
-        with:
-          name: dashboard-build
-          path: dashboard/
-          retention-days: 7
-          overwrite: true
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: cleanup
-    environment: deploy
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download cleaned dashboard artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dashboard-build
-          path: dashboard/
-
-      - name: Install Wrangler
-        run: npm install -g wrangler
-
-      - name: Deploy to production
-        run: |
-          CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-          wrangler pages deploy dashboard \
-            --project-name noida-property-dashboard \
-            --branch ${{ github.ref_name }} \
-            --commit-dirty=true
+      - name: Done — next scheduled scrape will start fresh
+        run: echo "Cleanup complete. The next hourly scrape run will create a fresh DB + dashboard."
