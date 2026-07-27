@@ -1,131 +1,277 @@
-import time
+"""
+Scrapling Spider integration for property scraping.
+
+Architecture:
+  PropertySpider(Spider) — Async Spider subclass that drives all site scraping.
+    Directly subclasses Scrapling's Spider framework for session management,
+    concurrency, and adaptive caching.
+
+  BaseScraper — Synchronous facade wrapping PropertySpider for CLI compatibility
+    (main.py). Not a Spider subclass. The sync wrapper avoids forcing CLI code
+    into an async event loop. All actual scraping logic lives in PropertySpider.
+"""
+
 import json
 import csv
-import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
-from urllib.robotparser import RobotFileParser
+from urllib.parse import urljoin
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-from scrapling.fetchers import Fetcher, StealthyFetcher
+from scrapling.spiders import Spider, Request
+from scrapling.fetchers import (
+    FetcherSession,
+    AsyncDynamicSession,
+    AsyncStealthySession,
+)
 
 RATE_LIMIT_MIN = 1.0
 
 
-class Deduplicator:
-    def __init__(self, site_name: str, seen_file: str | None = None):
-        self.site_name = site_name
-        if seen_file is None:
-            seen_file = Path("output") / site_name / ".seen.json"
-        self.seen_file = Path(seen_file)
-        self.seen_file.parent.mkdir(parents=True, exist_ok=True)
-        self.seen: set[str] = set()
-        self._load()
+class PropertySpider(Spider):
+    """Scrapling Spider subclass that drives all site scraping."""
 
-    def _load(self):
-        if self.seen_file.exists():
-            with open(self.seen_file) as f:
-                self.seen = set(json.load(f))
-
-    def _save(self):
-        with open(self.seen_file, "w") as f:
-            json.dump(list(self.seen), f)
-
-    def is_duplicate(self, record: dict) -> bool:
-        key_source = (
-            record.get("prop_id")
-            or record.get("listing_url")
-            or record.get("link")
-            or record.get("title")
-            or json.dumps(record, sort_keys=True)
-        )
-        if isinstance(key_source, list):
-            key_source = json.dumps(key_source, sort_keys=True)
-        key = hashlib.sha256(str(key_source).encode()).hexdigest()
-        if key in self.seen:
-            return True
-        self.seen.add(key)
-        self._save()
-        return False
-
-
-class BaseScraper:
     def __init__(self, config: dict, dry_run: bool = False, max_items: int | None = None):
-        self.config = config
-        self.dry_run = dry_run
-        self.max_items = max_items
+        self._config = config
+        self._dry_run = dry_run
+        self._max_items = max_items
+        self._records: list[dict] = []
+        self._page_count = 0
+
+        # Set Spider class attributes from config
         self.name = config["name"]
-        self.fetcher_type = config.get("fetcher", "basic")
-        self.selectors = config["selectors"]
-        self.pagination = config.get("pagination", {})
-        self.rate_limit = max(config.get("rate_limit_seconds", RATE_LIMIT_MIN), RATE_LIMIT_MIN)
-        self.output_format = config.get("output_format", "json")
-        self.respect_robots = config.get("respect_robots", True)
-        self._last_request_time = 0.0
-        self.dedup = Deduplicator(self.name) if not dry_run else None
-        self._robots_cache: dict[str, RobotFileParser] = {}
+        self.start_urls = []
+        urls = config.get("start_urls", [])
+        # Respect max_pages for URL-limited sites
+        max_pages = config.get("pagination", {}).get("max_pages", 1)
+        self.start_urls = urls[:max_pages]
 
-    def _rate_limit(self):
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self.rate_limit:
-            time.sleep(self.rate_limit - elapsed)
-        self._last_request_time = time.time()
+        self.concurrent_requests = 1  # polite per-site
+        self.download_delay = max(config.get("rate_limit_seconds", RATE_LIMIT_MIN), RATE_LIMIT_MIN)
+        self.robots_txt_obey = config.get("respect_robots", True)
+        self.allowed_domains = set()
 
-    def _check_robots(self, url: str) -> bool:
-        if not self.respect_robots:
-            return True
-        parsed = urlparse(url)
-        netloc = parsed.netloc
-        if netloc not in self._robots_cache:
-            rp = RobotFileParser(f"{parsed.scheme}://{netloc}/robots.txt")
-            try:
-                rp.read()
-            except Exception:
-                return True
-            self._robots_cache[netloc] = rp
-        return self._robots_cache[netloc].can_fetch("*", url)
+        # Adaptive parsing cache (only for sites that explicitly opt in)
+        has_cache = "adaptive_cache" in config
+        cache_dir = config.get("adaptive_cache", ".scrapling_cache")
+        self.development_mode = has_cache
+        self.development_cache_dir = cache_dir
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-    )
-    def _fetch_url(self, url: str):
-        self._rate_limit()
-        if not self._check_robots(url):
-            print(f"[WARN] {self.name}: robots.txt disallows {url}")
-            return None
-        kwargs = {"headless": True}
-        if self.config.get("parser") in ("json_embed", "jsonld"):
-            kwargs["network_idle"] = True
-            kwargs["timeout"] = 90000
-            kwargs["load_dom"] = True
-        if self.fetcher_type == "stealthy":
-            kwargs["solve_cloudflare"] = True
-            kwargs["network_idle"] = kwargs.get("network_idle", True)
-            kwargs["load_dom"] = kwargs.get("load_dom", True)
-            return StealthyFetcher.fetch(url, **kwargs)
-        elif self.fetcher_type == "dynamic":
-            kwargs["solve_cloudflare"] = False
-            kwargs["network_idle"] = kwargs.get("network_idle", True)
-            kwargs["load_dom"] = kwargs.get("load_dom", True)
-            return StealthyFetcher.fetch(url, **kwargs)
-        else:
-            return Fetcher.get(url)
+        # Proxy
+        self._proxy_config = config.get("proxy", {})
+        self._fetcher_type = config.get("fetcher", "dynamic")
+        self._parser_type = config.get("parser", "css")
+        self._selectors = config.get("selectors", {})
+        self._embed = config.get("embed", {})
+        self._pagination = config.get("pagination", {})
+        self._location_filter = config.get("location_filter", {})
 
-    def _extract_js_var(self, body: str, var_name: str) -> str | None:
-        pattern = re.compile(
-            rf'(?:window\.)?{re.escape(var_name)}\s*=\s*(\{{)',
-            re.DOTALL
+        super().__init__()
+
+    def configure_sessions(self, manager):
+        ft = self._fetcher_type
+        proxy = self._proxy_config.get("url") if self._proxy_config.get("enabled") else None
+        wait_sel = self._config.get("wait_selector")
+
+        session_kwargs = dict(
+            headless=True,
+            load_dom=True,
+            proxy=proxy,
+            adaptive=True,
         )
+        if wait_sel:
+            session_kwargs["wait_selector"] = wait_sel
+
+        if ft == "stealthy":
+            session = AsyncStealthySession(
+                network_idle=True,
+                timeout=90000,
+                solve_cloudflare=True,
+                **session_kwargs,
+            )
+            manager.add("default", session, default=True)
+        elif ft == "dynamic":
+            network_idle = self._config.get("network_idle", True)
+            session = AsyncDynamicSession(
+                network_idle=network_idle,
+                timeout=120000,
+                **session_kwargs,
+            )
+            manager.add("default", session, default=True)
+        else:
+            session = FetcherSession(**session_kwargs)
+            manager.add("default", session, default=True)
+
+    async def start_requests(self):
+        for url in self.start_urls:
+            yield Request(url, sid="default")
+
+    async def parse(self, response):
+        self._page_count += 1
+        parser = self._parser_type
+
+        if parser == "json_embed":
+            items = self._parse_json_embed(response)
+        elif parser == "jsonld":
+            items = self._parse_jsonld(response)
+        else:
+            items = self._parse_css(response)
+
+        for item in items:
+            yield item
+
+        # Pagination: follow next page if within max_pages
+        max_pages = self._pagination.get("max_pages", 1)
+        next_sel = self._pagination.get("next_selector")
+        if next_sel and self._page_count < max_pages:
+            href = response.css(next_sel, auto_save=True)
+            if href:
+                next_url = urljoin(str(response.url), href.get().strip())
+                yield Request(next_url, sid="default")
+
+    # ------------------------------------------------------------------ #
+    #  Parser implementations (adapted from BaseScraper, now generators)  #
+    # ------------------------------------------------------------------ #
+
+    def _parse_json_embed(self, response):
+        body = response.body
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", errors="replace")
+
+        var_name = self._embed.get("var", "")
+        data_path = self._embed.get("data_path", "")
+        filter_config = self._embed.get("filter", {})
+        field_map = self._selectors.get("fields", {})
+
+        if not var_name or not data_path:
+            return []
+
+        raw = self._extract_js_var(body, var_name)
+        if not raw:
+            return []
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+
+        items = self._follow_path(data, data_path)
+        if not isinstance(items, list):
+            return []
+
+        records = []
+        for item in items:
+            if filter_config:
+                f_field = filter_config.get("field", "")
+                f_contains = filter_config.get("contains", "")
+                f_match = filter_config.get("match", "")
+                val = str(item.get(f_field, ""))
+                if f_contains and f_contains not in val:
+                    continue
+                if f_match and val != f_match:
+                    continue
+
+            record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
+            for field_name, json_key in field_map.items():
+                if json_key:
+                    record[field_name] = item.get(json_key)
+            records.append(record)
+            if self._max_items and len(records) >= self._max_items:
+                break
+        return records
+
+    def _parse_jsonld(self, response):
+        body = response.body
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", errors="replace")
+
+        allowed_types = self._embed.get("types", ["Product", "SingleFamilyResidence", "Apartment", "House"])
+        field_map = self._selectors.get("fields", {})
+        filter_config = self._embed.get("filter", {})
+
+        raw_blocks = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>', body, re.DOTALL
+        )
+
+        records = []
+        for raw in raw_blocks:
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            items = []
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                if data.get("@type") in allowed_types:
+                    items = [data]
+                elif data.get("@type") == "ItemList":
+                    for el in data.get("itemListElement", []):
+                        if isinstance(el, dict):
+                            item_data = el.get("item", el)
+                            if item_data.get("@type") in allowed_types:
+                                items.append(item_data)
+
+            for item in items:
+                if filter_config:
+                    f_field = filter_config.get("field", "")
+                    f_contains = filter_config.get("contains", "")
+                    f_match = filter_config.get("match", "")
+                    val = str(self._follow_path(item, f_field) if "." in f_field else item.get(f_field, ""))
+                    if f_contains and f_contains not in val:
+                        continue
+                    if f_match and val != f_match:
+                        continue
+
+                record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
+                for field_name, json_key in field_map.items():
+                    if json_key:
+                        if "." in json_key:
+                            record[field_name] = self._follow_path(item, json_key)
+                        else:
+                            record[field_name] = item.get(json_key)
+                self._clean_jsonld_record(record)
+                records.append(record)
+                if self._max_items and len(records) >= self._max_items:
+                    return records
+        return records
+
+    def _parse_css(self, response):
+        item_sel = self._selectors.get("item", "")
+        if not item_sel:
+            return []
+        items_container = response.css(item_sel, auto_save=True)
+        fields = self._selectors.get("fields", {})
+
+        records = []
+        for item in items_container:
+            record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
+            for field_name, css_sel in fields.items():
+                record[field_name] = self._extract_field_value(item, css_sel)
+            records.append(record)
+            if self._max_items and len(records) >= self._max_items:
+                break
+        return records
+
+    # ------------------------------------------------------------------ #
+    #  Helper methods (ported from BaseScraper)                          #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _extract_js_var(body: str, var_name: str):
+        # Try JS variable assignment pattern first: window.VAR = {...}
+        pattern = re.compile(rf'(?:window\.)?{re.escape(var_name)}\s*=\s*(\{{)', re.DOTALL)
         m = pattern.search(body)
+        start = m.start(1) if m else None
+        # Fall back to Next.js <script id="VAR">JSON</script> pattern
         if not m:
+            pattern2 = re.compile(rf'<script[^>]*?id="{re.escape(var_name)}"[^>]*?>\s*(\{{)', re.DOTALL)
+            m2 = pattern2.search(body)
+            if m2:
+                start = m2.start(1)
+        if start is None:
             return None
-        start = m.start(1)
         depth = 0
         in_string = False
         escape = False
@@ -150,211 +296,129 @@ class BaseScraper:
                     return body[start:i + 1]
         return None
 
-    def _follow_path(self, data, path: str):
+    @staticmethod
+    def _follow_path(data, path: str):
         parts = path.split(".")
         for p in parts:
+            if isinstance(data, list):
+                if not data:
+                    return None
+                if p.lstrip('-').isdigit():
+                    data = data[int(p)]
+                else:
+                    data = data[0]
+                if isinstance(data, dict) and p in data:
+                    data = data[p]
+                continue
             if isinstance(data, dict) and p in data:
                 data = data[p]
-            elif isinstance(data, list) and p.lstrip('-').isdigit():
-                idx = int(p)
-                data = data[idx]
             else:
                 return None
         return data
 
-    def _extract_items_json_embed(self, page) -> list[dict]:
-        body = page.body
-        if isinstance(body, bytes):
-            body = body.decode("utf-8", errors="replace")
-
-        embed = self.config.get("embed", {})
-        var_name = embed.get("var", "")
-        data_path = embed.get("data_path", "")
-        filter_config = embed.get("filter", {})
-        field_map = self.selectors.get("fields", {})
-
-        if not var_name or not data_path:
-            print(f"[ERROR] {self.name}: embed.var and embed.data_path required")
-            return []
-
-        raw = self._extract_js_var(body, var_name)
-        if not raw:
-            print(f"[ERROR] {self.name}: Could not find {var_name} in page")
-            return []
-
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(f"[ERROR] {self.name}: Failed to parse {var_name}: {e}")
-            return []
-
-        items = self._follow_path(data, data_path)
-        if items is None:
-            print(f"[ERROR] {self.name}: Path '{data_path}' not found in data")
-            return []
-        if not isinstance(items, list):
-            print(f"[ERROR] {self.name}: Path '{data_path}' is not a list")
-            return []
-
-        records = []
-        for item in items:
-            if filter_config:
-                f_field = filter_config.get("field", "")
-                f_contains = filter_config.get("contains", "")
-                f_match = filter_config.get("match", "")
-                val = str(item.get(f_field, ""))
-                if f_contains and f_contains not in val:
-                    continue
-                if f_match and val != f_match:
-                    continue
-
-            record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
-            for field_name, json_key in field_map.items():
-                if json_key:
-                    record[field_name] = item.get(json_key)
-            if self.dedup and self.dedup.is_duplicate(record):
-                continue
-            records.append(record)
-        return records
-
-    def _extract_items_jsonld(self, page) -> list[dict]:
-        body = page.body
-        if isinstance(body, bytes):
-            body = body.decode("utf-8", errors="replace")
-
-        embed = self.config.get("embed", {})
-        allowed_types = embed.get("types", ["Product", "SingleFamilyResidence", "Apartment", "House"])
-        field_map = self.selectors.get("fields", {})
-        filter_config = embed.get("filter", {})
-
-        raw_blocks = re.findall(
-            r'<script type="application/ld\+json">(.*?)</script>', body, re.DOTALL
-        )
-
-        records = []
-        for raw in raw_blocks:
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-
-            items = []
-            if isinstance(data, list):
-                items = data
-            elif isinstance(data, dict):
-                if data.get("@type") in allowed_types:
-                    items = [data]
-                elif data.get("@type") == "ItemList":
-                    elements = data.get("itemListElement", [])
-                    for el in elements:
-                        if isinstance(el, dict):
-                            item_data = el.get("item", el)
-                            if item_data.get("@type") in allowed_types:
-                                items.append(item_data)
-
-            for item in items:
-                if filter_config:
-                    f_field = filter_config.get("field", "")
-                    f_contains = filter_config.get("contains", "")
-                    f_match = filter_config.get("match", "")
-                    val = str(self._follow_path(item, f_field) if "." in f_field else item.get(f_field, ""))
-                    if f_contains and f_contains not in val:
-                        continue
-                    if f_match and val != f_match:
-                        continue
-
-                record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
-                for field_name, json_key in field_map.items():
-                    if json_key:
-                        if "." in json_key:
-                            record[field_name] = self._follow_path(item, json_key)
-                        else:
-                            record[field_name] = item.get(json_key)
-                record = self._clean_jsonld_record(record)
-                if self.dedup and self.dedup.is_duplicate(record):
-                    continue
-                records.append(record)
-                if self.max_items and len(records) >= self.max_items:
-                    return records
-        return records
-
-    def _clean_jsonld_record(self, record: dict) -> dict:
+    @staticmethod
+    def _clean_jsonld_record(record: dict):
         for k, v in record.items():
             if isinstance(v, dict) and "@type" in v:
                 record[k] = None
-        return record
 
-    def _extract_field_value(self, item, css_sel: str):
+    @staticmethod
+    def _extract_field_value(item, css_sel: str):
         sel = item.css(css_sel, auto_save=True)
         values = [v.strip() for v in sel.getall() if v and v.strip()]
-        if len(values) == 0:
+        if not values:
             return None
-        elif len(values) == 1:
+        if len(values) == 1:
             return values[0]
-        else:
-            return values
+        return values
 
-    def _extract_items(self, page) -> list[dict]:
-        parser = self.config.get("parser", "css")
-        if parser == "json_embed":
-            return self._extract_items_json_embed(page)
-        if parser == "jsonld":
-            return self._extract_items_jsonld(page)
+    # ------------------------------------------------------------------ #
+    #  Hooks                                                             #
+    # ------------------------------------------------------------------ #
 
-        items_container = page.css(self.selectors["item"], auto_save=True)
-        records = []
-        for item in items_container:
-            record = {"site_name": self.name, "scraped_at": datetime.now(timezone.utc).isoformat()}
-            for field_name, css_sel in self.selectors["fields"].items():
-                record[field_name] = self._extract_field_value(item, css_sel)
-            if self.dedup and self.dedup.is_duplicate(record):
-                continue
-            records.append(record)
-            if self.max_items and len(records) >= self.max_items:
-                break
-        return records
-
-    def _get_next_url(self, page, base_url: str) -> str | None:
-        next_sel = self.pagination.get("next_selector")
-        if not next_sel:
+    async def on_scraped_item(self, item: dict) -> dict | None:
+        item = self._apply_filters(item)
+        if item is None:
             return None
-        sel = page.css(next_sel, auto_save=True)
-        href = sel.get()
-        if href:
-            return urljoin(base_url, href.strip())
-        return None
+        self._records.append(item)
+        return item
+
+    def _apply_filters(self, record: dict) -> dict | None:
+        filt = self._location_filter
+        if not filt:
+            return record
+        field = filt.get("field", "location")
+        terms = filt.get("contains", [])
+        if isinstance(terms, str):
+            terms = [terms]
+        if not terms:
+            return record
+        val = str(record.get(field) or "")
+        if not any(t.lower() in val.lower() for t in terms):
+            return None
+        return record
+
+
+# ------------------------------------------------------------------ #
+#  Synchronous wrapper (keeps BaseScraper API compatible)            #
+# ------------------------------------------------------------------ #
+
+class BaseScraper:
+    """Synchronous facade that wraps PropertySpider for CLI compatibility."""
+
+    _fallback_tracker: dict[str, int] = {}  # class-level: site -> consecutive zero runs
+    _anomaly_tracker: dict[str, int] = {}  # class-level: site -> consecutive anomaly runs
+
+    def __init__(self, config: dict, dry_run: bool = False, max_items: int | None = None):
+        self.config = config
+        self.dry_run = dry_run
+        self.max_items = max_items
+        self.name = config["name"]
+        self.fetcher_type = config.get("fetcher", "basic")
+        self.output_format = config.get("output_format", "json")
+        self.respect_robots = config.get("respect_robots", True)
+        self.dedup = None  # dedup now handled by Spider's fingerprint mechanism
 
     def run(self) -> list[dict]:
-        all_records = []
-        max_pages = self.pagination.get("max_pages", 1)
-        urls_to_visit = list(self.config["start_urls"])
+        config = dict(self.config)
 
-        for page_num in range(1, max_pages + 1):
-            if not urls_to_visit:
-                break
-            url = urls_to_visit.pop(0)
-            try:
-                page = self._fetch_url(url)
-            except Exception as e:
-                print(f"[ERROR] {self.name}: Failed to fetch {url}: {e}")
-                continue
-            if page is None:
-                continue
+        # Auto fallback: zero-yield (>=3) or anomaly (>=2) triggers stealthy switch
+        if self.fetcher_type == "dynamic":
+            key = self.name
+            prev = BaseScraper._fallback_tracker.get(key, 0)
+            anomaly = BaseScraper._anomaly_tracker.get(key, 0)
+            if anomaly >= 2:
+                print(f"[FALLBACK] {self.name}: {anomaly} consecutive anomalies, switching to stealthy")
+                config["fetcher"] = "stealthy"
+                self.fetcher_type = "stealthy"
+            elif prev >= 3:
+                print(f"[FALLBACK] {self.name}: {prev} consecutive zero-yield runs, switching to stealthy")
+                config["fetcher"] = "stealthy"
+                self.fetcher_type = "stealthy"
 
-            records = self._extract_items(page)
-            all_records.extend(records)
-            print(f"[OK] {self.name}: Page {page_num} -> {len(records)} items")
+        spider = PropertySpider(config, dry_run=self.dry_run, max_items=self.max_items)
 
-            if self.max_items and len(all_records) >= self.max_items:
-                print(f"[OK] {self.name}: Reached limit of {self.max_items} items, stopping")
-                break
+        if self.dry_run:
+            spider.development_mode = False  # don't cache in dry-run
 
-            if page_num < max_pages:
-                next_url = self._get_next_url(page, url)
-                if next_url:
-                    urls_to_visit.append(next_url)
+        result = spider.start()
+        records = spider._records
 
-        return all_records[:self.max_items] if self.max_items else all_records
+        # Apply dedup filter using raw output if needed
+        if self.dedup:
+            before = len(records)
+            records = [r for r in records if not self.dedup.is_duplicate(r)]
+            if len(records) < before:
+                print(f"[DEDUP] {self.name}: removed {before - len(records)} duplicates")
+
+        # Track fallback
+        if self.fetcher_type == "dynamic":
+            if len(records) == 0:
+                BaseScraper._fallback_tracker[self.name] = BaseScraper._fallback_tracker.get(self.name, 0) + 1
+            else:
+                BaseScraper._fallback_tracker[self.name] = 0
+
+        return records[:self.max_items] if self.max_items else records
 
     def write_output(self, records: list[dict]):
         if not records:

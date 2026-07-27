@@ -1,14 +1,17 @@
 import argparse
+import json
 import sys
 import time
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 import yaml
 
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
 from scrapers.registry import get_scraper
+from scrapers.base import BaseScraper
 
 Fetcher.configure(adaptive=True)
 StealthyFetcher.configure(adaptive=True)
@@ -21,7 +24,22 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
-log = logging.getLogger("scrapling")
+log = logging.getLogger("scraper")
+
+FALLBACK_STATE_PATH = Path("data/fallback_state.json")
+ANOMALY_STATE_PATH = Path("data/fallback_anomaly.json")
+
+
+def _load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def load_config(path: str = "config/sites.yaml") -> list[dict]:
@@ -41,7 +59,6 @@ def run_site(config: dict, dry_run: bool = False, max_items: int | None = None) 
         new_count = len(records)
         error = None
         written = 0
-        updated = 0
         failed = 0
         if not dry_run and records:
             try:
@@ -51,11 +68,11 @@ def run_site(config: dict, dry_run: bool = False, max_items: int | None = None) 
                 error = str(e)
                 failed = len(records)
         log.info("Finished %s: %d items in %.1fs", name, new_count, duration)
-        return {"name": name, "new": new_count, "written": written, "updated": updated, "failed": failed, "error": error, "duration": duration}
+        return {"name": name, "new": new_count, "written": written, "failed": failed, "error": error, "duration": duration}
     except Exception as e:
         duration = time.time() - start
         log.error("Failed %s: %s", name, e)
-        return {"name": name, "new": 0, "written": 0, "updated": 0, "failed": 0, "error": str(e), "duration": duration}
+        return {"name": name, "new": 0, "written": 0, "failed": 0, "error": str(e), "duration": duration}
 
 
 def main():
@@ -77,10 +94,17 @@ def main():
     else:
         targets = sites
 
+    # Load persistent fallback state across CI runs
+    BaseScraper._fallback_tracker = _load_json(FALLBACK_STATE_PATH)
+    BaseScraper._anomaly_tracker = _load_json(ANOMALY_STATE_PATH)
+
     results = []
     for config in targets:
         result = run_site(config, dry_run=args.dry_run, max_items=args.limit)
         results.append(result)
+
+    # Save zero-yield fallback state for next run
+    _save_json(FALLBACK_STATE_PATH, BaseScraper._fallback_tracker)
 
     total_new = sum(r["new"] for r in results)
     total_failed = sum(1 for r in results if r["error"])

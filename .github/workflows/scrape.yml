@@ -5,61 +5,144 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: scrape-db
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    environment: deploy
+    container:
+      image: ghcr.io/d4vinci/scrapling:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
         with:
-          python-version: '3.12'
+          path: /github/home/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install Python dependencies
+      - name: Install runtime tools
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Create required directories
-        run: mkdir -p logs output
+          apt-get update -qq
+          apt-get install -y -qq curl
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          apt-get update -qq
+          apt-get install -y -qq gh
+          pip install -q -r requirements.txt awscli
 
       - name: Install Playwright browsers
-        run: python -m playwright install --with-deps chromium
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: |
+          python -m playwright install chromium
+          python -m patchright install chromium 2>/dev/null || true
+
+      - name: Cache adaptive fingerprints
+        uses: actions/cache@v4
+        with:
+          path: ./.scrapling_cache
+          key: scrapling-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            scrapling-cache-
+
+      - name: Create required directories
+        run: mkdir -p logs output data/consolidated .scrapling_cache
+
+      - name: Download previous DB artifact (safe to fail on first run)
+        run: gh run download --name scraper-db --dir data/consolidated/ --repo ${{ github.repository }} || true
+
+      - name: Download previous fallback/history state
+        run: gh run download --name scraper-state --dir data/ --repo ${{ github.repository }} 2>/dev/null || true
 
       - name: Run scraper
         run: python main.py --all
         env:
           PYTHONUNBUFFERED: 1
 
-      - name: Build dashboard data
-        run: node dashboard/build-data.js
+      - name: Run anomaly detection
+        run: python check_anomalies.py --summary $GITHUB_STEP_SUMMARY
+
+      - name: Consolidate to SQLite
+        run: python consolidate.py --sites 99acres magicbricks squareyards olx proptiger proptiger-flats
+
+      - name: Sync DB to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          BACKUP="noida_properties-$(date -u +%Y%m%d_%H%M%S).db.gz"
+          gzip -c data/consolidated/noida_properties.db > "/tmp/$BACKUP"
+          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/db-backups/$BACKUP" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          aws s3 cp "/tmp/$BACKUP" "s3://$R2_BUCKET_NAME/noida_properties-latest.db.gz" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          echo "R2_BACKUP=$BACKUP" >> $GITHUB_ENV
+
+      - name: Build dashboard data from DB
+        run: python dashboard/build-data.py
+
+      - name: Upload DB artifact for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-db
+          path: data/consolidated/noida_properties.db
+          retention-days: 90
+          overwrite: true
+
+      - name: Upload fallback/history state for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-state
+          path: |
+            data/yield_history.json
+            data/fallback_state.json
+            data/fallback_anomaly.json
+          retention-days: 90
+          overwrite: true
+
+      - name: Upload dashboard artifact for deploy job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-build
+          path: dashboard/
+          retention-days: 7
+          overwrite: true
+
+      - name: Upload raw output artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-output-${{ github.run_number }}
+          path: |
+            output/
+            data/
+          retention-days: 7
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: scrape
+    environment: deploy
+    steps:
+      - name: Download dashboard artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dashboard-build
+          path: dashboard/
 
       - name: Install Wrangler
         run: npm install -g wrangler
 
-      - name: Debug check secret
-        run: |
-          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "TOKEN is set (length: ${#CLOUDFLARE_API_TOKEN})"
-          else
-            echo "TOKEN is NOT set"
-          fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      - name: Deploy to Cloudflare Pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: wrangler pages deploy dashboard --project-name noida-property-dashboard --commit-dirty=true
-
-      - name: Upload output artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: scraper-output-${{ github.run_number }}
-          path: output/
-          retention-days: 7
+      - name: Deploy to production
+        run: CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" wrangler pages deploy dashboard --project-name noida-property-dashboard --branch ${{ github.ref_name }} --commit-dirty=true

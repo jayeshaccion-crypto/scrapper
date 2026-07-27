@@ -1,0 +1,35 @@
+name: Clean & Reset
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm deleting ALL data (DB, outputs, dashboard data, state)'
+        required: true
+        default: ''
+
+concurrency:
+  group: cleanup-db
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm intent
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "yes" ]; then
+            echo "Aborted: set confirm=yes to run cleanup"
+            exit 1
+          fi
+
+      - name: Create required directories
+        run: mkdir -p logs output data/consolidated
+
+      - name: Delete all data (outputs, dashboard data, DB, state)
+        run: python dashboard/cleanup.py
+
+      - name: Done — next scheduled scrape will start fresh
+        run: echo "Cleanup complete. The next hourly scrape run will create a fresh DB + dashboard."
