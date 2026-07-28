@@ -251,6 +251,8 @@ sites:
     start_urls:
       - "https://housing.com/in/buy/noida"
     fetcher: stealthy
+    # Akamai CDN (not Cloudflare). Direct and Tor both blocked.
+    # Kept as active for CI to attempt from GitHub Actions IP.
     embed:
       var: "__INITIAL_STATE__"
       data_path: "searchResults"
